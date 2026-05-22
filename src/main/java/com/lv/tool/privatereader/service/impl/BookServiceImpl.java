@@ -7,88 +7,115 @@ import com.lv.tool.privatereader.repository.BookRepository;
 import com.lv.tool.privatereader.repository.ReadingProgressRepository;
 import com.lv.tool.privatereader.service.BookService;
 import com.lv.tool.privatereader.service.ChapterService;
+import io.reactivex.rxjava3.core.Completable;
+import io.reactivex.rxjava3.core.Observable;
+import io.reactivex.rxjava3.core.Single;
+import io.reactivex.rxjava3.schedulers.Schedulers;
 import org.jetbrains.annotations.NotNull;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
 import java.util.Optional;
 
 public class BookServiceImpl implements BookService {
 
-    private final BookRepository bookRepository = ApplicationManager.getApplication().getService(BookRepository.class);
-    private final ReadingProgressRepository readingProgressRepository = ApplicationManager.getApplication().getService(ReadingProgressRepository.class);
+    private static final com.intellij.openapi.diagnostic.Logger LOG = com.intellij.openapi.diagnostic.Logger.getInstance(BookServiceImpl.class);
 
-    @Override
-    public Flux<Book> getAllBooks() {
-        return Mono.fromCallable(() -> bookRepository.getAllBooks())
-                .subscribeOn(ReactiveSchedulers.getInstance().io())
-                .flatMapMany(Flux::fromIterable);
+    private final BookRepository bookRepository;
+    private final ReadingProgressRepository readingProgressRepository;
+
+    /**
+     * 无参构造函数，用于IntelliJ服务系统
+     * 通过ApplicationManager获取服务实例
+     */
+    public BookServiceImpl() {
+        this.bookRepository = ApplicationManager.getApplication().getService(BookRepository.class);
+        this.readingProgressRepository = ApplicationManager.getApplication().getService(ReadingProgressRepository.class);
+    }
+
+    /**
+     * 构造器注入，用于测试和依赖注入框架
+     * @param bookRepository 书籍仓库
+     * @param readingProgressRepository 阅读进度仓库
+     */
+    public BookServiceImpl(BookRepository bookRepository, ReadingProgressRepository readingProgressRepository) {
+        this.bookRepository = bookRepository;
+        this.readingProgressRepository = readingProgressRepository;
     }
 
     @Override
-    public Mono<Book> getBookById(@NotNull String bookId) {
-        return Mono.fromCallable(() -> Optional.ofNullable(bookRepository.getBook(bookId)))
-                .subscribeOn(ReactiveSchedulers.getInstance().io())
-                .flatMap(optionalBook -> optionalBook.map(Mono::just).orElseGet(Mono::empty))
+    public Observable<Book> getAllBooks() {
+        return Single.fromCallable(() -> bookRepository.getAllBooks())
+                .subscribeOn(Schedulers.io())
+                .flatMapObservable(Observable::fromIterable);
+    }
+
+    @Override
+    public Single<Book> getBookById(@NotNull String bookId) {
+        return Single.fromCallable(() -> Optional.ofNullable(bookRepository.getBook(bookId)))
+                .subscribeOn(Schedulers.io())
+                .flatMap(optionalBook -> optionalBook.map(Single::just).orElseGet(() -> Single.error(new RuntimeException("Book not found: " + bookId))))
                 .flatMap(this::loadProgressForBook);
     }
-    
+
     @Override
-    public Mono<Boolean> addBook(@NotNull Book book) {
-         return Mono.<Boolean>create(sink -> {
+    public Single<Boolean> addBook(@NotNull Book book) {
+        return Single.<Boolean>create(emitter -> {
             try {
                 bookRepository.addBook(book);
-                sink.success(true);
+                emitter.onSuccess(true);
             } catch (Exception e) {
-                sink.error(e);
+                LOG.warn("添加书籍失败: " + book.getTitle(), e);
+                emitter.onError(e);
             }
-        }).subscribeOn(ReactiveSchedulers.getInstance().io());
-    }
-    
-    @Override
-    public Mono<Boolean> removeBook(@NotNull Book book) {
-        return Mono.<Boolean>create(sink -> {
-            try {
-                bookRepository.removeBook(book);
-                sink.success(true);
-            } catch (Exception e) {
-                sink.error(e);
-            }
-        }).subscribeOn(ReactiveSchedulers.getInstance().io());
+        }).subscribeOn(Schedulers.io());
     }
 
     @Override
-    public Mono<Boolean> updateBook(@NotNull Book book) {
-        return Mono.<Boolean>create(sink -> {
+    public Single<Boolean> removeBook(@NotNull Book book) {
+        return Single.<Boolean>create(emitter -> {
+            try {
+                readingProgressRepository.resetProgress(book);
+                bookRepository.removeBook(book);
+                emitter.onSuccess(true);
+            } catch (Exception e) {
+                LOG.warn("移除书籍失败: " + book.getTitle(), e);
+                emitter.onError(e);
+            }
+        }).subscribeOn(Schedulers.io());
+    }
+
+    @Override
+    public Single<Boolean> updateBook(@NotNull Book book) {
+        return Single.<Boolean>create(emitter -> {
             try {
                 bookRepository.updateBook(book);
-                sink.success(true);
+                emitter.onSuccess(true);
             } catch (Exception e) {
-                sink.error(e);
+                LOG.warn("更新书籍失败: " + book.getTitle(), e);
+                emitter.onError(e);
             }
-        }).subscribeOn(ReactiveSchedulers.getInstance().io());
+        }).subscribeOn(Schedulers.io());
     }
 
     @Override
-    public Mono<Book> getLastReadBook() {
-        return Mono.fromCallable(() -> readingProgressRepository.getLastReadProgressData())
-                .subscribeOn(ReactiveSchedulers.getInstance().io())
+    public Single<Book> getLastReadBook() {
+        return Single.fromCallable(() -> readingProgressRepository.getLastReadProgressData())
+                .subscribeOn(Schedulers.io())
                 .flatMap(optionalProgress ->
                         optionalProgress.map(progress -> getBookById(progress.bookId()))
-                                .orElse(Mono.empty())
+                                .orElse(Single.error(new RuntimeException("No last read book found")))
                 );
     }
 
     @Override
-    public Mono<Void> saveReadingProgress(@NotNull Book book, @NotNull String chapterId, String chapterTitle, int position) {
-        return Mono.fromRunnable(() ->
+    public Completable saveReadingProgress(@NotNull Book book, @NotNull String chapterId, String chapterTitle, int position) {
+        return Completable.fromRunnable(() ->
                         readingProgressRepository.updateProgress(book, chapterId, chapterTitle, position))
-                .subscribeOn(ReactiveSchedulers.getInstance().io()).then();
+                .subscribeOn(Schedulers.io());
     }
-    
-    private Mono<Book> loadProgressForBook(Book book) {
-        return Mono.fromCallable(() -> readingProgressRepository.getProgress(book.getId()))
-                .subscribeOn(ReactiveSchedulers.getInstance().io())
+
+    private Single<Book> loadProgressForBook(Book book) {
+        return Single.fromCallable(() -> readingProgressRepository.getProgress(book.getId()))
+                .subscribeOn(Schedulers.io())
                 .map(optionalProgress -> {
                     optionalProgress.ifPresent(progress -> book.updateReadingProgress(
                             progress.lastReadChapterId(),

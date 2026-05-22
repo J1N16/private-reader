@@ -22,6 +22,7 @@ import java.util.concurrent.TimeoutException;
  * 用于执行HTTP请求，避免在ForkJoinPool中执行时出现SecurityException
  * 添加了重试机制和更详细的日志
  */
+@SuppressWarnings("deprecation")
 public class SafeHttpRequestExecutor {
     private static final Logger LOG = Logger.getInstance(SafeHttpRequestExecutor.class);
     private static final int DEFAULT_MAX_RETRIES = 3;
@@ -47,7 +48,7 @@ public class SafeHttpRequestExecutor {
         LOG.info("[线程池] 创建专用HTTP请求线程池，线程数: " + threadCount);
         java.util.concurrent.BlockingQueue<Runnable> queue = new java.util.concurrent.LinkedBlockingQueue<>(100);
         java.util.concurrent.RejectedExecutionHandler handler = (r, executor) -> {
-            LOG.error("[线程池] HTTP请求线程池队列已满，拒绝新任务，当前活跃线程: " + executor.getActiveCount() + ", 队列长度: " + executor.getQueue().size());
+            LOG.warn("[线程池] HTTP请求线程池队列已满，拒绝新任务，当前活跃线程: " + executor.getActiveCount() + ", 队列长度: " + executor.getQueue().size());
             // CallerRunsPolicy: 由提交任务的线程自己执行，防止任务丢失
             if (!executor.isShutdown()) {
                 r.run();
@@ -195,7 +196,7 @@ public class SafeHttpRequestExecutor {
                 if (attempt == maxRetries) {
                     failedRequests.incrementAndGet();
                     long totalTime = System.currentTimeMillis() - startTime;
-                    LOG.error("[性能监控] 达到最大重试次数 (" + maxRetries + ") #" + requestId + ": " + url + "，总耗时: " + totalTime + "ms", e);
+                    LOG.warn("[性能监控] 达到最大重试次数 (" + maxRetries + ") #" + requestId + ": " + url + "，总耗时: " + totalTime + "ms", e);
                     
                     // 记录性能统计
                     logPerformanceStats();
@@ -247,7 +248,7 @@ public class SafeHttpRequestExecutor {
                 return result;
             } catch (Exception e) {
                 long totalThreadTime = System.currentTimeMillis() - threadStartTime;
-                LOG.error("[性能监控] 线程池任务失败 #" + requestId + "，耗时: " + totalThreadTime + "ms", e);
+                LOG.warn("[性能监控] 线程池任务失败 #" + requestId + "，耗时: " + totalThreadTime + "ms", e);
                 throw e;
             }
         });
@@ -267,8 +268,8 @@ public class SafeHttpRequestExecutor {
         } catch (ExecutionException e) {
             long totalHttpTime = System.currentTimeMillis() - httpStartTime;
             Throwable cause = e.getCause();
-            LOG.error("[性能监控] 执行HTTP请求时发生错误 #" + requestId + "，URL: " + url + "，耗时: " + totalHttpTime + "ms，原因: " + (cause != null ? cause.getMessage() : "null"), e);
-            LOG.error("[线程池状态] " + getThreadPoolStatus() + ", URL: " + url);
+            LOG.warn("[性能监控] 执行HTTP请求时发生错误 #" + requestId + "，URL: " + url + "，耗时: " + totalHttpTime + "ms，原因: " + (cause != null ? cause.getMessage() : "null"), e);
+            LOG.warn("[线程池状态] " + getThreadPoolStatus() + ", URL: " + url);
 
             if (cause instanceof IOException) {
                 throw (IOException) cause;
@@ -280,8 +281,8 @@ public class SafeHttpRequestExecutor {
         } catch (TimeoutException e) {
             long totalHttpTime = System.currentTimeMillis() - httpStartTime;
             future.cancel(true); // 主动中断底层线程
-            LOG.error("[性能监控] HTTP请求超时(18秒)并已主动取消 #" + requestId + "，URL: " + url + "，耗时: " + totalHttpTime + "ms", e);
-            LOG.error("[线程池状态] " + getThreadPoolStatus() + ", URL: " + url);
+            LOG.warn("[性能监控] HTTP请求超时(18秒)并已主动取消 #" + requestId + "，URL: " + url + "，耗时: " + totalHttpTime + "ms", e);
+            LOG.warn("[线程池状态] " + getThreadPoolStatus() + ", URL: " + url);
             throw new IOException("HTTP请求超时(18秒)并已主动取消: " + url, e);
         } catch (Exception e) {
             long totalHttpTime = System.currentTimeMillis() - httpStartTime;
@@ -375,7 +376,7 @@ public class SafeHttpRequestExecutor {
             throw new IOException("HTTP request interrupted (with config): " + url, e);
         } catch (ExecutionException e) {
              Throwable cause = e.getCause();
-             LOG.error("执行HTTP请求(带配置)时发生错误: " + url + " Cause: " + (cause != null ? cause.getMessage() : "null"), e);
+             LOG.warn("执行HTTP请求(带配置)时发生错误: " + url + " Cause: " + (cause != null ? cause.getMessage() : "null"), e);
              if (cause instanceof IOException) {
                  throw (IOException) cause;
              } else if (cause instanceof Exception) {

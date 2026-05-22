@@ -5,16 +5,18 @@ import com.intellij.notification.NotificationGroupManager;
 import com.intellij.notification.NotificationType;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
+import com.lv.tool.privatereader.config.PrivateReaderConfig;
 import com.lv.tool.privatereader.util.NetworkUtils;
-import reactor.core.publisher.Mono;
-import reactor.util.retry.Retry;
+import io.reactivex.rxjava3.core.Single;
+import io.reactivex.rxjava3.schedulers.Schedulers;
 
 import java.net.ConnectException;
 import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
 import javax.net.ssl.SSLException;
 import java.io.IOException;
-import java.time.Duration;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
 /**
@@ -23,7 +25,6 @@ import java.util.function.Supplier;
  */
 public class ExceptionHandler {
     private static final Logger LOG = Logger.getInstance(ExceptionHandler.class);
-    private static final String NOTIFICATION_GROUP_ID = "Private Reader";
     private static final int MAX_RETRIES = 3;
     private static final long RETRY_DELAY_MS = 1000;
 
@@ -33,14 +34,14 @@ public class ExceptionHandler {
     public static void handle(Project project, PrivateReaderException exception) {
         // 记录日志
         LOG.error(exception);
-        
+
         // 根据异常类型处理
         String title = getErrorTitle(exception.getType());
         String content = getErrorMessage(exception);
-        
+
         // 显示通知
         showErrorNotification(project, title, content);
-        
+
         // 对特定类型的异常进行自动恢复
         handleRecovery(project, exception);
     }
@@ -55,41 +56,98 @@ public class ExceptionHandler {
     }
 
     /**
-     * 响应式重试操作
-     * 
+     * 响应式重试操作（接收 Single 返回值的异步操作）
+     *
      * @param <T> 返回类型
      * @param operation 要执行的操作
      * @param project 项目
      * @param operationName 操作名称（用于日志）
      * @param maxRetries 最大重试次数
-     * @return 包含结果的Mono
+     * @return 包含结果的Single
      */
-    public static <T> Mono<T> retryReactive(
-            Supplier<Mono<T>> operation,
+    public static <T> Single<T> retryReactive(
+            Supplier<Single<T>> operation,
             Project project,
             String operationName,
             int maxRetries) {
-        
+
         return operation.get()
-            .onErrorResume(e -> {
+            .onErrorResumeNext(e -> {
                 LOG.warn(String.format("操作'%s'失败，开始重试", operationName), e);
-                return Mono.error(e);
+                return Single.error(e);
             })
-            .retryWhen(Retry.backoff(maxRetries, Duration.ofMillis(RETRY_DELAY_MS))
-                .filter(throwable -> !(throwable instanceof PrivateReaderException)) // 只重试非业务异常
-                .doBeforeRetry(rs -> LOG.info(String.format("操作'%s'失败，准备第%d次重试", 
-                    operationName, rs.totalRetries() + 1))))
-            .onErrorMap(e -> {
+            .retryWhen(errors -> {
+                AtomicInteger retryCount = new AtomicInteger(0);
+                return errors.flatMapSingle(error -> {
+                    if (error instanceof PrivateReaderException) {
+                        return Single.error(error);
+                    }
+                    if (retryCount.incrementAndGet() <= maxRetries) {
+                        LOG.info(String.format("操作'%s'失败，准备第%d次重试", operationName, retryCount.get()));
+                        return Single.timer(RETRY_DELAY_MS, TimeUnit.MILLISECONDS);
+                    }
+                    return Single.error(error);
+                });
+            })
+            .onErrorResumeNext(e -> {
                 if (e instanceof PrivateReaderException) {
-                    return e;
+                    return Single.error(e);
                 }
-                return new PrivateReaderException(
+                return Single.error(new PrivateReaderException(
                     String.format("操作'%s'失败，已重试%d次", operationName, maxRetries),
                     e,
                     determineExceptionType(e)
-                );
+                ));
             })
             .doOnError(e -> handle(project, (Throwable) e, String.format("操作'%s'失败", operationName)));
+    }
+
+    /**
+     * 响应式重试操作（接收同步 Supplier 的便捷方法）
+     *
+     * @param <T> 返回类型
+     * @param operation 要执行的操作（同步返回值）
+     * @param project 项目
+     * @param operationName 操作名称（用于日志）
+     * @param maxRetries 最大重试次数
+     * @return 包含结果的Single
+     */
+    public static <T> Single<T> retryReactive(
+            Supplier<T> operation,
+            Project project,
+            String operationName,
+            int maxRetries,
+            boolean sync) {
+
+        return Single.fromCallable(operation::get)
+            .subscribeOn(Schedulers.io())
+            .doOnError(e -> LOG.error(String.format("操作'%s'失败: %s", operationName, e.getMessage()), e))
+            .retryWhen(errors -> {
+                AtomicInteger retryCount = new AtomicInteger(0);
+                return errors.flatMapSingle(error -> {
+                    if (retryCount.incrementAndGet() <= maxRetries) {
+                        LOG.info(String.format("操作'%s'失败，准备第%d次重试", operationName, retryCount.get()));
+                        long delay = (long) (RETRY_DELAY_MS * (1 + Math.random() * 0.3));
+                        return Single.timer(delay, TimeUnit.MILLISECONDS);
+                    }
+                    return Single.error(new PrivateReaderException(
+                        String.format("操作'%s'失败，已重试%d次", operationName, maxRetries),
+                        error,
+                        determineExceptionType(error)
+                    ));
+                });
+            })
+            .doOnSuccess(result -> LOG.info(String.format("操作'%s'成功完成", operationName)));
+    }
+
+    /**
+     * 响应式重试操作（使用默认的最大重试次数）
+     */
+    public static <T> Single<T> retryReactive(
+            Supplier<Single<T>> operation,
+            Project project,
+            String operationName) {
+        return retryReactive(operation, project, operationName, MAX_RETRIES);
     }
 
     private static PrivateReaderException convertException(Throwable exception, String message) {
@@ -148,7 +206,7 @@ public class ExceptionHandler {
 
     private static void showRecoveryNotification(Project project, String title, String content) {
         NotificationGroupManager.getInstance()
-                .getNotificationGroup(NOTIFICATION_GROUP_ID)
+                .getNotificationGroup(PrivateReaderConfig.NOTIFICATION_GROUP_ID)
                 .createNotification(content, NotificationType.INFORMATION)
                 .setTitle(title)
                 .notify(project);
@@ -205,14 +263,14 @@ public class ExceptionHandler {
     private static void showErrorNotification(Project project, String title, String content) {
         try {
             Notification notification = NotificationGroupManager.getInstance()
-                    .getNotificationGroup(NOTIFICATION_GROUP_ID)
+                    .getNotificationGroup(PrivateReaderConfig.NOTIFICATION_GROUP_ID)
                     .createNotification(content, NotificationType.ERROR)
                     .setTitle(title);
-            
+
             notification.notify(project);
         } catch (Exception e) {
             // 如果通知显示失败，只记录日志
             LOG.error("无法显示错误通知", e);
         }
     }
-} 
+}

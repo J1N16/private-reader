@@ -1,5 +1,7 @@
 package com.lv.tool.privatereader.repository.impl;
 
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
@@ -21,8 +23,6 @@ import com.lv.tool.privatereader.repository.StorageRepository;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import java.util.stream.Collectors;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
 import java.io.File;
 import java.io.FileReader;
@@ -35,10 +35,10 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.nio.file.attribute.BasicFileAttributes;
 import com.lv.tool.privatereader.service.ChapterService;
-import com.google.inject.Inject;
 import com.intellij.openapi.components.Service;
 
 /**
@@ -56,31 +56,23 @@ public final class FileBookRepository implements BookRepository {
     private static final int MAX_CHAPTER_FETCH_RETRY = 3; // 最大章节获取重试次数
 
     // 记录每本书尝试从URL获取章节列表的次数
-    private static final Map<String, Integer> chapterFetchRetryCount = new HashMap<>();
+    private static final Map<String, Integer> chapterFetchRetryCount = new ConcurrentHashMap<>();
 
     private final StorageRepository storageRepository;
     private final Gson gson;
 
-    // 内存缓存，使用LRU策略
-    private final Map<String, CacheEntry> bookCache = new LinkedHashMap<String, CacheEntry>(MAX_CACHE_SIZE, 0.75f, true) {
-        @Override
-        protected boolean removeEldestEntry(Map.Entry<String, CacheEntry> eldest) {
-            return size() > MAX_CACHE_SIZE;
-        }
-    };
+    // 内存缓存，使用 Guava 统一处理容量和过期淘汰
+    private final Cache<String, CacheEntry> bookCache = CacheBuilder.newBuilder()
+            .maximumSize(MAX_CACHE_SIZE)
+            .expireAfterWrite(30, TimeUnit.MINUTES)
+            .build();
 
-    // 缓存条目，包含数据和时间戳
+    // 缓存条目
     private static class CacheEntry {
         final Book book;
-        final long timestamp;
 
         CacheEntry(Book book) {
             this.book = book;
-            this.timestamp = System.currentTimeMillis();
-        }
-
-        boolean isExpired() {
-            return System.currentTimeMillis() - timestamp > TimeUnit.MINUTES.toMillis(30);
         }
     }
 
@@ -89,9 +81,7 @@ public final class FileBookRepository implements BookRepository {
         this.gson = createSecureGson();
 
         // 清空重试计数Map
-        synchronized (chapterFetchRetryCount) {
-            chapterFetchRetryCount.clear();
-        }
+        chapterFetchRetryCount.clear();
 
         // 启动后台线程，在应用启动后清理和修复损坏的书籍文件
         javax.swing.SwingUtilities.invokeLater(() -> {
@@ -109,6 +99,41 @@ public final class FileBookRepository implements BookRepository {
             }
         });
     }
+
+    // 共享的排除策略实例，用于序列化和反序列化
+    private static final com.google.gson.ExclusionStrategy PROBLEMATIC_TYPE_EXCLUSION_STRATEGY = new com.google.gson.ExclusionStrategy() {
+        @Override
+        public boolean shouldSkipField(com.google.gson.FieldAttributes f) {
+            String className = f.getDeclaringClass().getName();
+            String fieldName = f.getName();
+
+            // 排除所有可能导致问题的字段
+            return className.startsWith("java.lang.invoke.") ||
+                   className.startsWith("java.lang.reflect.") ||
+                   className.contains("MethodType") ||
+                   className.contains("com.intellij.") ||
+                   className.contains("com.jetbrains.") ||
+                   fieldName.equals("rtype") ||
+                   fieldName.equals("ptypes") ||
+                   fieldName.equals("supportedSignaturesOfLightServiceConstructors") ||
+                   fieldName.equals("myContainer") ||
+                   fieldName.equals("myDisposed") ||
+                   fieldName.equals("myParentComponentManager") ||
+                   fieldName.startsWith("my") || // 排除所有my开头的字段，这是IntelliJ常用的命名
+                   fieldName.startsWith("_");   // 排除所有_开头的字段
+        }
+
+        @Override
+        public boolean shouldSkipClass(Class<?> clazz) {
+            String className = clazz.getName();
+            // 排除所有可能导致问题的类
+            return className.startsWith("java.lang.invoke.") ||
+                   className.startsWith("java.lang.reflect.") ||
+                   className.contains("MethodType") ||
+                   className.contains("com.intellij.") ||
+                   className.contains("com.jetbrains.");
+        }
+    };
 
     /**
      * 创建安全配置的Gson实例，避免访问JDK内部类引起的模块系统限制
@@ -161,74 +186,9 @@ public final class FileBookRepository implements BookRepository {
                 .excludeFieldsWithModifiers(java.lang.reflect.Modifier.TRANSIENT,
                                            java.lang.reflect.Modifier.STATIC) // 排除transient和static字段
                 .registerTypeAdapterFactory(excludeProblematicTypesFactory) // 注册我们自定义的类型适配器工厂
-                // 序列化排除策略 - 更全面的字段排除
-                .addSerializationExclusionStrategy(new com.google.gson.ExclusionStrategy() {
-                    @Override
-                    public boolean shouldSkipField(com.google.gson.FieldAttributes f) {
-                        String className = f.getDeclaringClass().getName();
-                        String fieldName = f.getName();
-
-                        // 排除所有可能导致问题的字段
-                        return className.startsWith("java.lang.invoke.") ||
-                               className.startsWith("java.lang.reflect.") ||
-                               className.contains("MethodType") ||
-                               className.contains("com.intellij.") ||
-                               className.contains("com.jetbrains.") ||
-                               fieldName.equals("rtype") ||
-                               fieldName.equals("ptypes") ||
-                               fieldName.equals("supportedSignaturesOfLightServiceConstructors") ||
-                               fieldName.equals("myContainer") ||
-                               fieldName.equals("myDisposed") ||
-                               fieldName.equals("myParentComponentManager") ||
-                               fieldName.startsWith("my") || // 排除所有my开头的字段，这是IntelliJ常用的命名
-                               fieldName.startsWith("_");   // 排除所有_开头的字段
-                    }
-
-                    @Override
-                    public boolean shouldSkipClass(Class<?> clazz) {
-                        String className = clazz.getName();
-                        // 排除所有可能导致问题的类
-                        return className.startsWith("java.lang.invoke.") ||
-                               className.startsWith("java.lang.reflect.") ||
-                               className.contains("MethodType") ||
-                               className.contains("com.intellij.") ||
-                               className.contains("com.jetbrains.");
-                    }
-                })
-                // 反序列化排除策略 - 与序列化相同
-                .addDeserializationExclusionStrategy(new com.google.gson.ExclusionStrategy() {
-                    @Override
-                    public boolean shouldSkipField(com.google.gson.FieldAttributes f) {
-                        String className = f.getDeclaringClass().getName();
-                        String fieldName = f.getName();
-
-                        // 与序列化相同的排除规则
-                        return className.startsWith("java.lang.invoke.") ||
-                               className.startsWith("java.lang.reflect.") ||
-                               className.contains("MethodType") ||
-                               className.contains("com.intellij.") ||
-                               className.contains("com.jetbrains.") ||
-                               fieldName.equals("rtype") ||
-                               fieldName.equals("ptypes") ||
-                               fieldName.equals("supportedSignaturesOfLightServiceConstructors") ||
-                               fieldName.equals("myContainer") ||
-                               fieldName.equals("myDisposed") ||
-                               fieldName.equals("myParentComponentManager") ||
-                               fieldName.startsWith("my") ||
-                               fieldName.startsWith("_");
-                    }
-
-                    @Override
-                    public boolean shouldSkipClass(Class<?> clazz) {
-                        String className = clazz.getName();
-                        // 与序列化相同的排除规则
-                        return className.startsWith("java.lang.invoke.") ||
-                               className.startsWith("java.lang.reflect.") ||
-                               className.contains("MethodType") ||
-                               className.contains("com.intellij.") ||
-                               className.contains("com.jetbrains.");
-                    }
-                })
+                // 使用共享的排除策略
+                .addSerializationExclusionStrategy(PROBLEMATIC_TYPE_EXCLUSION_STRATEGY)
+                .addDeserializationExclusionStrategy(PROBLEMATIC_TYPE_EXCLUSION_STRATEGY)
                 .serializeNulls() // 序列化 null 值
                 .create();
     }
@@ -320,8 +280,8 @@ public final class FileBookRepository implements BookRepository {
         }
 
         // 1. 尝试从缓存获取
-        CacheEntry cachedEntry = bookCache.get(bookId);
-        if (cachedEntry != null && !cachedEntry.isExpired()) {
+        CacheEntry cachedEntry = bookCache.getIfPresent(bookId);
+        if (cachedEntry != null) {
             // Add Debug Log for cache hit
             LOG.debug(String.format("Cache hit for Book ID: %s. Checking completeness...", bookId));
 
@@ -329,17 +289,14 @@ public final class FileBookRepository implements BookRepository {
             Book cachedBook = cachedEntry.book;
             if (cachedBook.getCachedChapters() == null || cachedBook.getCachedChapters().isEmpty()) {
                 // 检查重试次数
-                int retryCount = 0;
-                synchronized (chapterFetchRetryCount) {
-                    retryCount = chapterFetchRetryCount.getOrDefault(bookId, 0);
-                    if (retryCount >= MAX_CHAPTER_FETCH_RETRY) {
-                        LOG.warn("书籍 [" + bookId + "] 已达到最大重试次数 (" + MAX_CHAPTER_FETCH_RETRY + ")，不再尝试从文件重新加载章节列表");
-                        // 返回当前可能不完整的缓存版本
-                        return cachedBook;
-                    }
-                    // 增加重试计数
-                    chapterFetchRetryCount.put(bookId, retryCount + 1);
+                int retryCount = chapterFetchRetryCount.getOrDefault(bookId, 0);
+                if (retryCount >= MAX_CHAPTER_FETCH_RETRY) {
+                    LOG.warn("书籍 [" + bookId + "] 已达到最大重试次数 (" + MAX_CHAPTER_FETCH_RETRY + ")，不再尝试从文件重新加载章节列表");
+                    // 返回当前可能不完整的缓存版本
+                    return cachedBook;
                 }
+                // 增加重试计数
+                chapterFetchRetryCount.put(bookId, retryCount + 1);
 
                 LOG.warn("缓存中的书籍 [" + bookId + "] 缺少章节列表，尝试从文件重新加载... (重试次数: " + (retryCount + 1) + "/" + MAX_CHAPTER_FETCH_RETRY + ")");
                 try {
@@ -353,13 +310,11 @@ public final class FileBookRepository implements BookRepository {
                               fileBook = restoreLastReadingPosition(fileBook);
                               if (fileBook.getCachedChapters() != null && !fileBook.getCachedChapters().isEmpty()) {
                                   LOG.info("成功从文件为 [" + bookId + "] 加载了章节列表，更新缓存。");
-                                  bookCache.put(bookId, new CacheEntry(fileBook)); // 更新缓存
+                                  bookCache.put(bookId, new CacheEntry(fileBook));
 
                                   // 重置重试计数
-                                  synchronized (chapterFetchRetryCount) {
-                                      chapterFetchRetryCount.remove(bookId);
-                                      LOG.debug("重置书籍 [" + bookId + "] 的重试计数");
-                                  }
+                                  chapterFetchRetryCount.remove(bookId);
+                                  LOG.debug("重置书籍 [" + bookId + "] 的重试计数");
 
                                   return fileBook; // 返回从文件加载的完整对象
                               } else {
@@ -397,7 +352,7 @@ public final class FileBookRepository implements BookRepository {
                 if (recoveredBook != null) {
                      LOG.info("从索引恢复书籍成功: " + bookId);
                      saveBookDetails(recoveredBook); // 保存恢复的数据
-                     bookCache.put(bookId, new CacheEntry(recoveredBook)); // 添加到缓存
+                     bookCache.put(bookId, new CacheEntry(recoveredBook));
                      return recoveredBook;
                 }
                 return null;
@@ -413,17 +368,14 @@ public final class FileBookRepository implements BookRepository {
                     fileBook.getUrl() != null && !fileBook.getUrl().isEmpty()) {
 
                     // 检查重试次数
-                    int retryCount = 0;
-                    synchronized (chapterFetchRetryCount) {
-                        retryCount = chapterFetchRetryCount.getOrDefault(bookId, 0);
-                        if (retryCount >= MAX_CHAPTER_FETCH_RETRY) {
-                            LOG.warn("书籍 [" + bookId + "] 已达到最大重试次数 (" + MAX_CHAPTER_FETCH_RETRY + ")，不再尝试从 URL 获取章节列表");
-                            // 返回当前可能不完整的书籍对象
-                            return fileBook;
-                        }
-                        // 增加重试计数
-                        chapterFetchRetryCount.put(bookId, retryCount + 1);
+                    int retryCount = chapterFetchRetryCount.getOrDefault(bookId, 0);
+                    if (retryCount >= MAX_CHAPTER_FETCH_RETRY) {
+                        LOG.warn("书籍 [" + bookId + "] 已达到最大重试次数 (" + MAX_CHAPTER_FETCH_RETRY + ")，不再尝试从 URL 获取章节列表");
+                        // 返回当前可能不完整的书籍对象
+                        return fileBook;
                     }
+                    // 增加重试计数
+                    chapterFetchRetryCount.put(bookId, retryCount + 1);
 
                     LOG.warn("书籍 [" + bookId + "] details.json 文件缺少章节列表，尝试从 URL 重新获取... (重试次数: " + (retryCount + 1) + "/" + MAX_CHAPTER_FETCH_RETRY + ")");
                     try {
@@ -435,11 +387,11 @@ public final class FileBookRepository implements BookRepository {
                             // 调用服务获取章节 (使用阻塞方式获取，注意潜在性能影响)
                             LOG.debug("调用 chapterService.getChapterList for " + bookId);
 
-                            // Correctly call getChapterList which returns Mono<List<Chapter>>
-                            reactor.core.publisher.Mono<List<com.lv.tool.privatereader.parser.NovelParser.Chapter>> chapterListMono =
+                            // Correctly call getChapterList which returns Single<List<Chapter>>
+                            io.reactivex.rxjava3.core.Single<List<com.lv.tool.privatereader.parser.NovelParser.Chapter>> chapterListSingle =
                                 chapterService.getChapterList(fileBook);
                             List<com.lv.tool.privatereader.parser.NovelParser.Chapter> fetchedChapters =
-                                chapterListMono.block(); // .block() on Mono<List<T>> returns List<T>
+                                chapterListSingle.blockingGet(); // .blockingGet() on Single<List<T>> returns List<T>
 
                             if (fetchedChapters != null && !fetchedChapters.isEmpty()) {
                                 LOG.info("成功从 URL 为书籍 [" + bookId + "] 获取到 " + fetchedChapters.size() + " 个章节。");
@@ -450,10 +402,8 @@ public final class FileBookRepository implements BookRepository {
                                 saveBookDetails(fileBook);
 
                                 // 重置重试计数
-                                synchronized (chapterFetchRetryCount) {
-                                    chapterFetchRetryCount.remove(bookId);
-                                    LOG.debug("重置书籍 [" + bookId + "] 的重试计数");
-                                }
+                                chapterFetchRetryCount.remove(bookId);
+                                LOG.debug("重置书籍 [" + bookId + "] 的重试计数");
                                 // 保存后，缓存会在下面更新
                             } else {
                                 LOG.warn("从 URL 未能获取到书籍 [" + bookId + "] 的章节列表。");
@@ -479,7 +429,7 @@ public final class FileBookRepository implements BookRepository {
                                  fileBook.getLastReadPosition(), fileBook.getLastReadPage()));
                          // 更新缓存 (使用可能已补充章节的 fileBook)
                          bookCache.put(bookId, new CacheEntry(fileBook));
-                     }
+                         }
                  }
             } catch (Exception parseEx) {
                  // Handle parsing error (potentially recover from index)
@@ -490,7 +440,7 @@ public final class FileBookRepository implements BookRepository {
                        LOG.info("从索引恢复书籍成功 (after parse error): " + bookId);
                        saveBookDetails(recoveredBook);
                        bookCache.put(bookId, new CacheEntry(recoveredBook));
-                       return recoveredBook;
+                         return recoveredBook;
                   }
             }
              return fileBook; // 返回从文件加载（并可能已补充章节）的书籍
@@ -848,7 +798,7 @@ public final class FileBookRepository implements BookRepository {
             removeBookFromIndex(book.getId());
 
             // 从缓存中移除
-            bookCache.remove(book.getId());
+            bookCache.invalidate(book.getId());
 
             LOG.info("删除书籍成功: " + book.getTitle());
         } catch (Exception e) {
@@ -883,7 +833,7 @@ public final class FileBookRepository implements BookRepository {
             }
 
             // 清空缓存
-            bookCache.clear();
+            bookCache.invalidateAll();
 
             LOG.info("清空所有书籍成功");
         } catch (Exception e) {
@@ -1216,7 +1166,7 @@ public final class FileBookRepository implements BookRepository {
 
                     // 添加到缓存
                     bookCache.put(bookId, new CacheEntry(minimalBook));
-                } catch (Exception e) {
+                        } catch (Exception e) {
                     LOG.error("创建替代书籍对象失败: " + e.getMessage(), e);
 
                     // 如果恢复失败，则删除原始文件以避免后续再次触发相同错误
@@ -1286,10 +1236,8 @@ public final class FileBookRepository implements BookRepository {
             LOG.info("已清理 " + cleanedCount + " 个损坏的书籍文件");
 
             // 清理重试计数Map
-            synchronized (chapterFetchRetryCount) {
-                chapterFetchRetryCount.clear();
-                LOG.debug("已清理章节获取重试计数");
-            }
+            chapterFetchRetryCount.clear();
+            LOG.debug("已清理章节获取重试计数");
         } catch (Exception e) {
             LOG.error("清理损坏书籍文件失败: " + e.getMessage(), e);
         }

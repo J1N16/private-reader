@@ -1,76 +1,73 @@
 plugins {
     id 'java'
-    id 'org.jetbrains.intellij' version '1.17.1'
-    id 'org.jetbrains.kotlin.jvm' version '1.9.23'
+    id 'org.jetbrains.intellij.platform' version '2.3.0'
 }
 
-group 'com.lv.tool'
-version '2.4.1'
+group = 'com.lv.tool'
+version = '2.4.1'
 
 repositories {
     mavenCentral()
     maven {
-        url 'https://maven.aliyun.com/repository/public'
+        url = 'https://maven.aliyun.com/repository/public'
         allowInsecureProtocol = true
     }
-    maven {
-        url = uri("https://cache-redirector.jetbrains.com/intellij-repository/releases")
-    }
-    maven {
-        url = uri("https://cache-redirector.jetbrains.com/intellij-repository/snapshots")
+    intellijPlatform {
+        defaultRepositories()
     }
 }
 
 dependencies {
-    implementation 'org.jsoup:jsoup:1.15.3'
-    implementation 'com.google.inject:guice:7.0.0'
-    implementation 'io.projectreactor:reactor-core:3.5.11'
-    implementation 'io.projectreactor.addons:reactor-extra:3.5.1'
-    implementation 'io.projectreactor.addons:reactor-adapter:3.5.1'
-    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8"
-    implementation 'org.xerial:sqlite-jdbc:3.46.0.0'
-    implementation 'javax.inject:javax.inject:1'
-    implementation 'io.reactivex.rxjava3:rxjava:3.1.8'
+    implementation 'org.jsoup:jsoup:1.22.2'
+    implementation 'org.xerial:sqlite-jdbc:3.53.1.0'
+    implementation 'io.reactivex.rxjava3:rxjava:3.1.12'
+    implementation 'com.google.code.gson:gson:2.14.0'
+
+    // IntelliJ Platform
+    intellijPlatform {
+        intellijIdeaCommunity "2024.3"
+    }
+
+    // Test dependencies
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.14.4'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.14.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.14.4'
+    testImplementation 'org.mockito:mockito-core:5.23.0'
+    testImplementation 'org.mockito:mockito-junit-jupiter:5.23.0'
 }
 
-intellij {
-    version = '243.24978.46'
-    type = 'IC'
-    updateSinceUntilBuild = false
+test {
+    useJUnitPlatform()
+}
+
+intellijPlatform {
     instrumentCode = false
-    sameSinceUntilBuild = false
-}
 
-patchPluginXml {
-    sinceBuild = '241'
-    changeNotes = """
-          <h3>2.4.1 版本更新</h3>
-          <ul>
-            <li>修复已知问题</li>
-            <li>性能优化</li>
-          </ul>
-          <h3>Version 2.4.1</h3>
-          <ul>
-            <li>Fixed known issues</li>
-            <li>Performance optimization</li>
-          </ul>
-          """
+    patchPluginXml {
+        sinceBuild = '243'
+        changeNotes = """
+              <h3>2.4.1 版本更新</h3>
+              <ul>
+                <li>修复已知问题</li>
+                <li>性能优化</li>
+              </ul>
+              <h3>Version 2.4.1</h3>
+              <ul>
+                <li>Fixed known issues</li>
+                <li>Performance optimization</li>
+              </ul>
+              """
+    }
 }
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_17
-    targetCompatibility = JavaVersion.VERSION_17
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
 }
 
 wrapper {
-    gradleVersion = '8.5'
+    gradleVersion = '8.14.4'
     distributionType = Wrapper.DistributionType.BIN
-}
-
-tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
-    kotlinOptions {
-        jvmTarget = "17"
-    }
 }
 
 // Add duplicate handling strategy for Jar tasks

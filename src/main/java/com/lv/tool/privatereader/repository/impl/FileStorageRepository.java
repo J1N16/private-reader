@@ -1,7 +1,5 @@
 package com.lv.tool.privatereader.repository.impl;
 
-import com.google.inject.Inject;
-import com.google.inject.Singleton;
 import com.intellij.openapi.application.Application;
 import com.intellij.openapi.diagnostic.Logger;
 import com.lv.tool.privatereader.repository.StorageRepository;
@@ -19,10 +17,9 @@ import java.nio.charset.StandardCharsets;
 
 /**
  * 文件存储仓库实现
- * 
+ *
  * 基于文件系统实现存储仓库接口，管理应用的各种存储需求。
  */
-@Singleton
 public final class FileStorageRepository implements StorageRepository {
     private static final Logger LOG = Logger.getInstance(FileStorageRepository.class);
     private static final int MAX_FILENAME_LENGTH = 255; // 大多数文件系统的限制

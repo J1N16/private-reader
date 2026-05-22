@@ -27,3 +27,9 @@ Thumbs.db
 .private-reader/
 
 .vscode
+
+# IntelliJ Platform Gradle Plugin
+.intellijPlatform/
+
+# Claude Code local artifacts
+.claude/

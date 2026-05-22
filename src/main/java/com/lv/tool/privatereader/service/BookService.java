@@ -2,10 +2,11 @@ package com.lv.tool.privatereader.service;
 
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.service.ChapterService.EnhancedChapter;
+import io.reactivex.rxjava3.core.Completable;
+import io.reactivex.rxjava3.core.Observable;
+import io.reactivex.rxjava3.core.Single;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
 import java.util.List;
 
@@ -19,9 +20,9 @@ public interface BookService {
     /**
      * 获取所有书籍
      *
-     * @return 书籍列表的Flux流
+     * @return 书籍列表的 Observable 流
      */
-    Flux<Book> getAllBooks();
+    Observable<Book> getAllBooks();
 
     /**
      * 添加书籍
@@ -29,7 +30,7 @@ public interface BookService {
      * @param book 书籍对象
      * @return 添加成功返回true，否则返回false
      */
-    Mono<Boolean> addBook(@NotNull Book book);
+    Single<Boolean> addBook(@NotNull Book book);
 
     /**
      * 删除书籍
@@ -37,7 +38,7 @@ public interface BookService {
      * @param book 书籍对象
      * @return 删除成功返回true，否则返回false
      */
-    Mono<Boolean> removeBook(@NotNull Book book);
+    Single<Boolean> removeBook(@NotNull Book book);
 
     /**
      * 更新书籍信息
@@ -45,22 +46,22 @@ public interface BookService {
      * @param book 书籍对象
      * @return 更新成功返回true，否则返回false
      */
-    Mono<Boolean> updateBook(@NotNull Book book);
+    Single<Boolean> updateBook(@NotNull Book book);
 
     /**
      * 获取最近阅读的书籍
      *
-     * @return 最近阅读的书籍，如果没有则返回空Mono
+     * @return 最近阅读的书籍，如果没有则返回空 Maybe
      */
-    Mono<Book> getLastReadBook();
+    Single<Book> getLastReadBook();
 
     /**
      * 根据ID获取书籍
      *
      * @param bookId 书籍ID
-     * @return 包含书籍的Mono，如果未找到则为空Mono
+     * @return 包含书籍的 Single，如果未找到则抛出异常
      */
-    Mono<Book> getBookById(@NotNull String bookId);
+    Single<Book> getBookById(@NotNull String bookId);
 
     /**
      * 保存阅读进度
@@ -71,7 +72,7 @@ public interface BookService {
      * @param position     阅读位置
      * @return 完成信号
      */
-    Mono<Void> saveReadingProgress(@NotNull Book book, @NotNull String chapterId, String chapterTitle, int position);
+    Completable saveReadingProgress(@NotNull Book book, @NotNull String chapterId, String chapterTitle, int position);
 
     /**
      * 同步获取书籍的章节列表 (包含内容)

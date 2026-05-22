@@ -19,9 +19,7 @@ import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import com.intellij.openapi.util.IconLoader;
 import com.intellij.icons.AllIcons;
-import com.lv.tool.privatereader.storage.BookStorage;
 import com.lv.tool.privatereader.storage.StorageManager;
-import com.lv.tool.privatereader.storage.cache.ChapterCacheManager;
 import com.lv.tool.privatereader.repository.BookRepository;
 import com.lv.tool.privatereader.repository.ChapterCacheRepository;
 import com.lv.tool.privatereader.repository.RepositoryModule;
@@ -124,21 +122,11 @@ public class CacheConfigurable implements Configurable {
                 RepositoryModule repositoryModule = RepositoryModule.getInstance();
                 if (repositoryModule != null) {
                     BookRepository bookRepository = repositoryModule.getBookRepository();
-                    if (bookRepository != null) {
-                        // BookRepository可能没有直接获取文件路径的方法，使用其他方式获取
-                        booksPathHolder[0] = getBookDataPath();
-                        LOG.info("获取书籍数据路径: " + booksPathHolder[0]);
-                    } else {
-                        // 回退到旧的实现
-                        BookStorage bookStorage = ApplicationManager.getApplication().getService(BookStorage.class);
-                        booksPathHolder[0] = bookStorage.getBooksFilePath();
-                        LOG.info("从BookStorage获取书籍数据路径: " + booksPathHolder[0]);
-                    }
+                    booksPathHolder[0] = getBookDataPath();
+                    LOG.info("获取书籍数据路径: " + booksPathHolder[0]);
                 } else {
-                    // 回退到旧的实现
-                    BookStorage bookStorage = ApplicationManager.getApplication().getService(BookStorage.class);
-                    booksPathHolder[0] = bookStorage.getBooksFilePath();
-                    LOG.info("从BookStorage获取书籍数据路径: " + booksPathHolder[0]);
+                    booksPathHolder[0] = getBookDataPath();
+                    LOG.info("获取书籍数据路径(回退): " + booksPathHolder[0]);
                 }
             }
         }
@@ -201,10 +189,7 @@ public class CacheConfigurable implements Configurable {
                             }
                         }
 
-                        // 回退到旧的实现
-                        ChapterCacheManager cacheManager = projects[0].getService(ChapterCacheManager.class);
-                        cacheManager.clearAllCache();
-                        Messages.showInfoMessage("缓存已清理完成", "清理缓存");
+                        notificationService.showError("无法清理缓存", "章节缓存仓库未初始化");
                     } else {
                         notificationService.showError("无法清理缓存", "没有打开的项目");
                     }

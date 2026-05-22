@@ -6,7 +6,6 @@ import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
-// import com.intellij.openapi.util.Disposer; // No longer explicitly needed if only using connect(this)
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.util.messages.MessageBusConnection;
@@ -146,7 +145,7 @@ public final class ReaderModeSwitcher implements ReaderModeSettingsListener, Dis
              // 显示通知栏模式信息
              if (notificationService != null) {
                  notificationService.showInfo("阅读模式", "已切换到通知栏模式").subscribe(
-                     null, // onSuccess
+                     notification -> {},
                      error -> LOG.error("Error showing notification info", error)
                  );
              } else {

@@ -38,41 +38,41 @@ public final class SettingsStorage {
     }
 
     public <T extends BaseSettings<T>> void saveSettings(T settings) {
-        LOG.info("[配置诊断] SettingsStorage 开始保存设置: " + settings.getClass().getSimpleName());
+        LOG.debug("[配置诊断] SettingsStorage 开始保存设置: " + settings.getClass().getSimpleName());
         try {
             String json = gson.toJson(settings);
-            LOG.info("[配置诊断] 序列化设置完成: " + settings.getClass().getSimpleName() + ", JSON 长度: " + json.length());
+            LOG.debug("[配置诊断] 序列化设置完成: " + settings.getClass().getSimpleName() + ", JSON 长度: " + json.length());
 
             Path filePath = getSettingsFilePath(settings.getClass());
-            LOG.info("[配置诊断] 将保存设置到文件: " + filePath);
+            LOG.debug("[配置诊断] 将保存设置到文件: " + filePath);
 
             writeFile(settings.getClass(), json);
-            LOG.info("[配置诊断] 成功保存设置到文件: " + filePath);
+            LOG.debug("[配置诊断] 成功保存设置到文件: " + filePath);
         } catch (Exception e) {
             LOG.error("[配置诊断] 保存设置失败: " + settings.getClass().getSimpleName(), e);
         }
     }
 
     public <T extends BaseSettings<T>> T loadSettings(Class<T> settingsClass) {
-        LOG.info("[配置诊断] SettingsStorage 开始加载设置: " + settingsClass.getSimpleName());
+        LOG.debug("[配置诊断] SettingsStorage 开始加载设置: " + settingsClass.getSimpleName());
         try {
             Path filePath = getSettingsFilePath(settingsClass);
-            LOG.info("[配置诊断] 将从文件加载设置: " + filePath);
+            LOG.debug("[配置诊断] 将从文件加载设置: " + filePath);
 
             if (!Files.exists(filePath)) {
-                LOG.info("[配置诊断] 设置文件不存在: " + filePath);
+                LOG.debug("[配置诊断] 设置文件不存在: " + filePath);
                 return null;
             }
 
             String json = readFile(settingsClass);
             if (json == null || json.trim().isEmpty()) {
-                LOG.info("[配置诊断] 设置文件为空: " + filePath);
+                LOG.debug("[配置诊断] 设置文件为空: " + filePath);
                 return null;
             }
 
-            LOG.info("[配置诊断] 成功读取设置文件: " + filePath + ", JSON 长度: " + json.length());
+            LOG.debug("[配置诊断] 成功读取设置文件: " + filePath + ", JSON 长度: " + json.length());
             T settings = gson.fromJson(json, settingsClass);
-            LOG.info("[配置诊断] 成功反序列化设置: " + settingsClass.getSimpleName());
+            LOG.debug("[配置诊断] 成功反序列化设置: " + settingsClass.getSimpleName());
             return settings;
         } catch (Exception e) {
             LOG.error("[配置诊断] 加载设置失败: " + settingsClass.getSimpleName(), e);
@@ -83,11 +83,11 @@ public final class SettingsStorage {
     private <T> String readFile(Class<T> settingsClass) throws IOException {
         Path filePath = getSettingsFilePath(settingsClass);
         if (!Files.exists(filePath)) {
-            LOG.info("[配置诊断] readFile: 文件不存在: " + filePath);
+            LOG.debug("[配置诊断] readFile: 文件不存在: " + filePath);
             return null;
         }
 
-        LOG.info("[配置诊断] readFile: 开始读取文件: " + filePath);
+        LOG.debug("[配置诊断] readFile: 开始读取文件: " + filePath);
         try (FileReader reader = new FileReader(filePath.toFile())) {
             char[] buffer = new char[1024];
             StringBuilder content = new StringBuilder();
@@ -96,7 +96,7 @@ public final class SettingsStorage {
                 content.append(buffer, 0, length);
             }
             String result = content.toString();
-            LOG.info("[配置诊断] readFile: 成功读取文件: " + filePath + ", 长度: " + result.length());
+            LOG.debug("[配置诊断] readFile: 成功读取文件: " + filePath + ", 长度: " + result.length());
             return result;
         } catch (IOException e) {
             LOG.error("[配置诊断] readFile: 读取文件失败: " + filePath, e);
@@ -108,10 +108,10 @@ public final class SettingsStorage {
         Path filePath = getSettingsFilePath(settingsClass);
         Path parentDir = filePath.getParent();
 
-        LOG.info("[配置诊断] writeFile: 开始写入文件: " + filePath);
+        LOG.debug("[配置诊断] writeFile: 开始写入文件: " + filePath);
 
         if (!Files.exists(parentDir)) {
-            LOG.info("[配置诊断] writeFile: 创建目录: " + parentDir);
+            LOG.debug("[配置诊断] writeFile: 创建目录: " + parentDir);
             try {
                 Files.createDirectories(parentDir);
             } catch (IOException e) {
@@ -122,7 +122,7 @@ public final class SettingsStorage {
 
         try (FileWriter writer = new FileWriter(filePath.toFile())) {
             writer.write(content);
-            LOG.info("[配置诊断] writeFile: 成功写入文件: " + filePath + ", 长度: " + content.length());
+            LOG.debug("[配置诊断] writeFile: 成功写入文件: " + filePath + ", 长度: " + content.length());
         } catch (IOException e) {
             LOG.error("[配置诊断] writeFile: 写入文件失败: " + filePath, e);
             throw e;
@@ -132,7 +132,7 @@ public final class SettingsStorage {
     private <T> Path getSettingsFilePath(Class<T> settingsClass) {
         String userHome = System.getProperty("user.home");
         Path path = Paths.get(userHome, ".private-reader", "settings", settingsClass.getSimpleName() + SETTINGS_EXT);
-        LOG.info("[配置诊断] getSettingsFilePath: " + settingsClass.getSimpleName() + " -> " + path);
+        LOG.debug("[配置诊断] getSettingsFilePath: " + settingsClass.getSimpleName() + " -> " + path);
         return path;
     }
 }

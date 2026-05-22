@@ -26,6 +26,7 @@ import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 public class ChapterListDialog extends DialogWrapper {
     private final Project project;
@@ -298,9 +299,8 @@ public class ChapterListDialog extends DialogWrapper {
 
         // 添加超时和重试机制
         chapterService.getChapterList(book)
-            .timeout(java.time.Duration.ofSeconds(30)) // 设置30秒超时
+            .timeout(30, TimeUnit.SECONDS) // 设置30秒超时
             .retry(2) // 失败时重试2次
-            .publishOn(ReactiveSchedulers.getInstance().ui())
             .subscribe(
                 chapters -> {
                     LOG.info("成功加载章节列表：书籍=" + book.getTitle() + ", 章节数量=" + chapters.size());
@@ -484,14 +484,13 @@ public class ChapterListDialog extends DialogWrapper {
             .getService(com.lv.tool.privatereader.service.ChapterService.class)
             .clearBookCache(book)
             .subscribe(
-                unused -> {
+                () -> {
                     LOG.debug("已清除ChapterService的章节内容缓存");
 
                     // 在缓存清除成功后，获取最新章节列表
                     chapterService.getChapterList(book)
-                        .timeout(java.time.Duration.ofSeconds(30)) // 设置30秒超时
+                        .timeout(30, TimeUnit.SECONDS) // 设置30秒超时
                         .retry(2) // 失败时重试2次
-                        .publishOn(ReactiveSchedulers.getInstance().ui())
                         .subscribe(
                             chapters -> {
                                 LOG.info("成功刷新章节列表：书籍=" + book.getTitle() + ", 章节数量=" + chapters.size());
@@ -540,9 +539,8 @@ public class ChapterListDialog extends DialogWrapper {
 
                     // 即使缓存清除失败，也尝试获取章节列表
                     chapterService.getChapterList(book)
-                        .timeout(java.time.Duration.ofSeconds(30)) // 设置30秒超时
+                        .timeout(30, TimeUnit.SECONDS) // 设置30秒超时
                         .retry(2) // 失败时重试2次
-                        .publishOn(ReactiveSchedulers.getInstance().ui())
                         .subscribe(
                             chapters -> {
                                 LOG.info("成功刷新章节列表：书籍=" + book.getTitle() + ", 章节数量=" + chapters.size());

@@ -6,7 +6,7 @@ import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.lv.tool.privatereader.model.Book;
-import com.lv.tool.privatereader.storage.cache.ChapterCacheManager;
+import com.lv.tool.privatereader.repository.ReactiveChapterCacheRepository;
 import com.lv.tool.privatereader.repository.BookRepository;
 import org.jetbrains.annotations.NotNull;
 
@@ -70,8 +70,6 @@ public final class StorageManager {
         // 从旧位置迁移数据（如果需要）
         migrateFromOldLocation();
         
-        // 迁移设置
-        migrateSettings();
         LOG.info("StorageManager 的初始化后任务完成。");
     }
     
@@ -170,12 +168,23 @@ public final class StorageManager {
     }
     
     /**
-     * 获取章节缓存管理器
-     * @return 章节缓存管理器
+     * 获取响应式章节缓存仓库
+     * @return 响应式章节缓存仓库
+     * @deprecated 请使用 {@link #getReactiveChapterCacheRepository()} 代替
+     */
+    @Deprecated
+    @NotNull
+    public ReactiveChapterCacheRepository getChapterCacheManager() {
+        return com.intellij.openapi.application.ApplicationManager.getApplication().getService(ReactiveChapterCacheRepository.class);
+    }
+
+    /**
+     * 获取响应式章节缓存仓库
+     * @return 响应式章节缓存仓库
      */
     @NotNull
-    public ChapterCacheManager getChapterCacheManager() {
-        return com.intellij.openapi.application.ApplicationManager.getApplication().getService(ChapterCacheManager.class);
+    public ReactiveChapterCacheRepository getReactiveChapterCacheRepository() {
+        return com.intellij.openapi.application.ApplicationManager.getApplication().getService(ReactiveChapterCacheRepository.class);
     }
     
     /**
@@ -437,27 +446,4 @@ public final class StorageManager {
         }
     }
     
-    /**
-     * 迁移设置（现在是初始化后任务的一部分）
-     */
-    private void migrateSettings() {
-        try {
-            // TODO: 实现具体的设置迁移逻辑
-            // SettingsMigrationManager migrationManager = ApplicationManager.getApplication().getService(SettingsMigrationManager.class);
-            // if (migrationManager != null) {
-                 // 例如: 
-                 // OldSettings oldSettings = loadOldSettings();
-                 // if (oldSettings != null) {
-                 //     NewSettings newSettings = migrationManager.migrate(OldSettings.class, "1.0", "2.0", oldSettings);
-                 //     saveNewSettings(newSettings);
-                 // }
-            //    LOG.info("设置迁移检查完成 (具体逻辑待实现)");
-            // } else {
-            //    LOG.warn("SettingsMigrationManager 服务未找到，无法执行设置迁移");
-            // }
-            LOG.info("设置迁移检查跳过 (具体逻辑待实现)"); // 临时日志
-        } catch (Exception e) {
-            LOG.error("设置迁移失败: " + e.getMessage(), e);
-        }
-    }
 } 

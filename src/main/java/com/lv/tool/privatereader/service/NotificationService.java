@@ -2,8 +2,9 @@ package com.lv.tool.privatereader.service;
 
 import com.intellij.notification.Notification;
 import com.lv.tool.privatereader.model.Book;
+import io.reactivex.rxjava3.core.Completable;
+import io.reactivex.rxjava3.core.Single;
 import org.jetbrains.annotations.NotNull;
-import reactor.core.publisher.Mono;
 
 /**
  * 通知服务接口
@@ -108,17 +109,11 @@ public interface NotificationService {
     void showLoadingNotification(@NotNull com.intellij.openapi.project.Project project, @NotNull String message);
 
     // Existing reactive methods (kept for compatibility if still used elsewhere)
-    Mono<Notification> showChapterContent(@NotNull Book book, @NotNull String chapterId, @NotNull String content);
-    Mono<Notification> showError(@NotNull String title, @NotNull String message);
-    Mono<Notification> showInfo(@NotNull String title, @NotNull String message);
-    Mono<Void> closeAllNotificationsReactive(); // Renamed to avoid conflict
-    Mono<Notification> showPrevPageReactive(); // Renamed to avoid conflict
-    Mono<Notification> showNextPageReactive(); // Renamed to avoid conflict
-    Mono<Notification> navigateChapterReactive(int direction); // Renamed to avoid conflict
-
-    // void startAutoRead(int intervalSeconds); // REMOVED
-
-    // void stopAutoRead(); // REMOVED
-
-    // Optional<String> getCurrentChapterTitle(); // Removed as it's not essential and might be fetched differently
+    Single<Notification> showChapterContent(@NotNull Book book, @NotNull String chapterId, @NotNull String content);
+    Single<Notification> showError(@NotNull String title, @NotNull String message);
+    Single<Notification> showInfo(@NotNull String title, @NotNull String message);
+    Completable closeAllNotificationsReactive();
+    Single<Notification> showPrevPageReactive();
+    Single<Notification> showNextPageReactive();
+    Single<Notification> navigateChapterReactive(int direction);
 }

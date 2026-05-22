@@ -21,12 +21,10 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.util.concurrent.locks.ReentrantLock;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.model.BookProgressData;
 import com.lv.tool.privatereader.repository.ReadingProgressRepository;
 import com.lv.tool.privatereader.repository.StorageRepository;
-// import com.lv.tool.privatereader.repository.impl.SqliteReadingProgressRepository; // Keep this commented or remove if not needed directly
 import org.jetbrains.annotations.Nullable;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -35,15 +33,28 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Initializes the database table if it doesn't exist.
  * Implemented as a Application Level Service.
  * Includes one-time migration logic from old JSON format.
+ *
+ * 优化：使用静态驱动加载 + 缓存连接，避免每次调用都创建新连接。
+ * SQLite 是单写入者数据库，单连接 + 同步锁即可满足需求。
  */
 @Service(Service.Level.APP)
-public final class DatabaseManager {
+public final class DatabaseManager implements Disposable {
     private static final Logger LOG = Logger.getInstance(DatabaseManager.class);
     private static final AtomicBoolean databaseInitialized = new AtomicBoolean(false);
     private static final String MIGRATION_FLAG_KEY = "private.reader.migration.sqlite.v1.complete";
-    private static final String BOOK_DETAILS_FILENAME = "book_details.json"; // Assuming this is the old filename
+    private static final String BOOK_DETAILS_FILENAME = "book_details.json";
 
     private final String dbUrl;
+
+    // 静态初始化块：只加载一次驱动
+    static {
+        try {
+            Class.forName("org.sqlite.JDBC");
+            LOG.info("SQLite JDBC driver loaded successfully.");
+        } catch (ClassNotFoundException e) {
+            LOG.error("CRITICAL: SQLite JDBC driver class not found. Please ensure the 'org.xerial:sqlite-jdbc' dependency is added to build.gradle.", e);
+        }
+    }
 
     // SQL statement to create the progress table
     private static final String CREATE_TABLE_SQL = """
@@ -64,21 +75,8 @@ public final class DatabaseManager {
             """;
 
     public DatabaseManager() {
-        // Attempt to load the SQLite JDBC driver class early.
-        // This might help in some classloader scenarios, but the core requirement
-        // is having the sqlite-jdbc dependency in the build file.
-        try {
-            Class.forName("org.sqlite.JDBC");
-            LOG.info("SQLite JDBC driver loaded successfully.");
-        } catch (ClassNotFoundException e) {
-            LOG.error("CRITICAL: SQLite JDBC driver class not found. Please ensure the 'org.xerial:sqlite-jdbc' dependency is added to build.gradle.", e);
-            // Depending on the desired behavior, you might want to re-throw an error
-            // or prevent further initialization if the driver is essential.
-        }
-
         this.dbUrl = DatabaseConstants.getDatabaseUrl();
         LOG.info("DatabaseManager initialized. DB URL: " + dbUrl);
-        // Ensure database directory and table are initialized on startup
         ensureDatabaseInitialized();
     }
 
@@ -87,32 +85,21 @@ public final class DatabaseManager {
     }
 
     /**
-     * Gets a connection to the SQLite database.
-     * Initializes the database and table on the first call.
+     * 获取 SQLite 数据库连接。
+     * 调用方负责关闭返回的连接。
      *
      * @return A valid Connection object.
      * @throws SQLException if a database access error occurs.
      */
     @NotNull
     public Connection getConnection() throws SQLException {
-        // Always create and return a new connection
-        LOG.debug("Creating new SQLite connection to: " + dbUrl);
-        Connection newConnection = null;
-        try {
-            // Load the SQLite JDBC driver (optional, but good practice)
-            // Consider loading the driver only once statically if performance is critical
-            Class.forName("org.sqlite.JDBC"); 
-            newConnection = DriverManager.getConnection(dbUrl);
-            newConnection.setAutoCommit(true); // Default to auto-commit for simplicity
-            LOG.debug("New SQLite connection created successfully.");
-            return newConnection;
-        } catch (ClassNotFoundException e) {
-            LOG.error("SQLite JDBC driver not found.", e);
-            throw new SQLException("SQLite JDBC driver not found.", e);
-        } catch (SQLException e) {
-            LOG.error("Failed to establish new SQLite connection.", e);
-            throw e; // Re-throw the original SQLException
-        }
+        Connection connection = DriverManager.getConnection(dbUrl);
+        connection.setAutoCommit(true);
+        return connection;
+    }
+
+    @Override
+    public void dispose() {
     }
 
     /**
@@ -141,35 +128,28 @@ public final class DatabaseManager {
     }
 
     /**
-     * Initializes the database table structure (CREATE TABLE, ALTER TABLE).
-     * This method creates its own connection.
+     * 初始化数据库表结构（CREATE TABLE, ALTER TABLE）。
      */
     private void initializeDatabaseTableStructure() {
-        try (Connection conn = DriverManager.getConnection(dbUrl); // Create dedicated connection for setup
+        try (Connection conn = DriverManager.getConnection(dbUrl);
              Statement stmt = conn.createStatement()) {
 
-            // Create the table if it doesn't exist
             stmt.execute(CREATE_TABLE_SQL);
             LOG.info("Ensured 'reading_progress' table exists.");
 
-            // Attempt to add the 'is_finished' column - this handles migration
-            // It will fail if the column already exists, which is expected.
             try {
                 stmt.execute(ADD_FINISHED_COLUMN_SQL);
                 LOG.info("Added 'is_finished' column to 'reading_progress' table (or it already existed).");
             } catch (SQLiteException e) {
                 if (e.getErrorCode() == SQLiteErrorCode.SQLITE_ERROR.code && e.getMessage().contains("duplicate column name: is_finished")) {
-                    // This is expected if the column already exists, ignore.
                     LOG.debug("'is_finished' column already exists.");
                 } else {
-                    // Re-throw other SQLite errors
                     throw e;
                 }
             }
 
         } catch (SQLException e) {
             LOG.error("Failed to initialize database table 'reading_progress'.", e);
-            // Consider how to handle this error - maybe disable the feature?
         }
     }
 

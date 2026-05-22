@@ -5,7 +5,6 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.lv.tool.privatereader.async.ReactiveSchedulers;
-import com.lv.tool.privatereader.async.RxJava3Adapter;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.storage.cache.ReactiveChapterPreloader;
 import com.lv.tool.privatereader.parser.NovelParser;
@@ -26,7 +25,6 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import io.reactivex.rxjava3.core.Single;
-import kotlin.Pair;
 
 
 public class ReaderViewModel implements Disposable {
@@ -109,7 +107,8 @@ public class ReaderViewModel implements Disposable {
         );
 
         disposables.add(
-                RxJava3Adapter.from(chapterService.getChapterContent(book, chapter.url()))
+                chapterService.getChapterContent(book, chapter.url())
+                        .toObservable()
                         .subscribeOn(Schedulers.io())
                         .subscribe(
                                 content -> {
@@ -134,7 +133,7 @@ public class ReaderViewModel implements Disposable {
                                     updateAndSaveProgress(book, chapter);
                                 },
                                 error -> {
-                                    LOG.error("Failed to load content for chapter: " + chapter.url(), error);
+                                    LOG.warn("Failed to load content for chapter: " + chapter.url(), error);
                                     notificationService.showError("加载章节内容失败", error.getMessage());
                                     uiState.onNext(
                                             uiState.getValue().toBuilder()
@@ -150,7 +149,7 @@ public class ReaderViewModel implements Disposable {
         // Fetch latest book from DB to ensure we have the most up-to-date progress (especially lastReadPage)
         // This prevents overwriting DB with stale data from UI state when switching modes
         disposables.add(
-            RxJava3Adapter.from(bookService.getBookById(book.getId()))
+            bookService.getBookById(book.getId())
                 .flatMap(latestBook -> {
                     int position = 0;
                     int page = 1;
@@ -167,13 +166,13 @@ public class ReaderViewModel implements Disposable {
                     // Update latestBook for saving
                     latestBook.updateReadingProgress(chapter.url(), position, page);
 
-                    return bookService.saveReadingProgress(latestBook, chapter.url(), chapter.title(), position);
+                    return bookService.saveReadingProgress(latestBook, chapter.url(), chapter.title(), position)
+                        .andThen(Single.just(true));
                 })
                 .subscribeOn(Schedulers.io())
                 .subscribe(
                     v -> {},
-                    error -> LOG.error("Failed to update progress on chapter load", error),
-                    () -> LOG.debug("Progress updated on chapter load for: " + chapter.title())
+                    error -> LOG.error("Failed to update progress on chapter load", error)
                 )
         );
     }
@@ -202,14 +201,14 @@ public class ReaderViewModel implements Disposable {
         }
 
         disposables.add(
-            RxJava3Adapter.from(bookService.getBookById(bookId)) // Fetch the latest book state
+            bookService.getBookById(bookId) // Fetch the latest book state
                 .flatMap(latestBook -> chapterService.getChapterList(latestBook)
-                        .map(chapters -> new kotlin.Pair<>(latestBook, chapters))) // Pair the latest book with its chapters
+                        .map(chapters -> new java.util.AbstractMap.SimpleEntry<>(latestBook, chapters))) // Pair the latest book with its chapters
                 .subscribeOn(Schedulers.io())
                 .subscribe(
                     pair -> {
-                        Book latestBook = pair.getFirst();
-                        List<NovelParser.Chapter> chapters = pair.getSecond();
+                        Book latestBook = pair.getKey();
+                        List<NovelParser.Chapter> chapters = pair.getValue();
                         // Determine which chapter to select after loading. Prioritize the explicitly passed one.
                         String chapterIdToSelect = chapterIdToRestore != null ? chapterIdToRestore : latestBook.getLastReadChapterId();
 
@@ -254,11 +253,11 @@ public class ReaderViewModel implements Disposable {
     private void loadInitialData() {
         uiState.onNext(uiState.getValue().toBuilder().isLoadingBooks(true).build());
         disposables.add(
-            RxJava3Adapter.from(bookService.getAllBooks()).toList()
+            bookService.getAllBooks().toList()
                 .subscribeOn(Schedulers.io())
                 .subscribe(books -> {
                     disposables.add(
-                        RxJava3Adapter.from(bookService.getLastReadBook()).firstElement()
+                        bookService.getLastReadBook().toObservable().firstElement()
                             .subscribe(
                                 lastReadBook -> {
                                     books.sort(Comparator.comparingLong(Book::getCreateTimeMillis).reversed());
@@ -303,7 +302,7 @@ public class ReaderViewModel implements Disposable {
         LOG.info("Searching for books with keyword: " + keyword);
         uiState.onNext(uiState.getValue().toBuilder().isLoadingBooks(true).build());
         disposables.add(
-            RxJava3Adapter.from(bookService.getAllBooks())
+            bookService.getAllBooks()
                 .filter(b -> matchesKeyword(b, keyword))
                 .toList()
                 .subscribeOn(Schedulers.io())
@@ -346,7 +345,8 @@ public class ReaderViewModel implements Disposable {
             fetchBookInfo(url)
                 .subscribe(book -> {
                     disposables.add(
-                        RxJava3Adapter.from(bookService.addBook(book))
+                        bookService.addBook(book)
+                            .toObservable()
                             .subscribe(success -> {
                                 if (success) {
                                     loadInitialData(); // Just reload everything for simplicity
@@ -391,7 +391,8 @@ public class ReaderViewModel implements Disposable {
         }
         uiState.onNext(uiState.getValue().toBuilder().isLoadingBooks(true).build());
         disposables.add(
-            RxJava3Adapter.from(bookService.removeBook(bookToDelete))
+            bookService.removeBook(bookToDelete)
+                .toObservable()
                 .subscribe(success -> {
                     if(success) {
                         loadInitialData(); // Just reload everything
@@ -414,13 +415,13 @@ public class ReaderViewModel implements Disposable {
         // Fetch the latest book state from the service to ensure we have the correct lastReadPage
         // The book in uiState might be stale (from getAllBooks) and have default page 1
         disposables.add(
-            RxJava3Adapter.from(bookService.getBookById(bookId))
-                .flatMap(book -> bookService.saveReadingProgress(book, chapterId, "", position))
+            bookService.getBookById(bookId)
+                .flatMap(book -> bookService.saveReadingProgress(book, chapterId, "", position)
+                    .andThen(Single.just(true)))
                 .subscribeOn(Schedulers.io())
                 .subscribe(
                     v -> {},
-                    error -> LOG.error("Failed to save progress for chapter: " + chapterId, error),
-                    () -> LOG.debug("Progress saved for chapter: " + chapterId)
+                    error -> LOG.error("Failed to save progress for chapter: " + chapterId, error)
                 )
         );
     }
@@ -434,7 +435,8 @@ public class ReaderViewModel implements Disposable {
 
        // First, ensure we have the latest chapter list for the book.
        disposables.add(
-           RxJava3Adapter.from(chapterService.getChapterList(book))
+           chapterService.getChapterList(book)
+               .toObservable()
                .subscribeOn(Schedulers.io())
                .subscribe(
                    chapters -> {
@@ -484,8 +486,9 @@ public class ReaderViewModel implements Disposable {
            // It's a service, so its lifecycle is managed by the application.
            // 优化：使用 subscribeOn(Schedulers.single()) 避免占用过多IO线程
            // 并且可以考虑限制预加载的数量，比如只预加载下一章
-           // 使用 RxJava3Adapter 将 Reactor Mono 转换为 RxJava Single/Completable 以兼容 Schedulers
-           RxJava3Adapter.from(chapterPreloader.preloadChaptersReactive(book, indexToPreload))
+           // 使用 Completable.toObservable() 转换以兼容 subscribe
+           chapterPreloader.preloadChaptersReactive(book, indexToPreload)
+               .toObservable()
                .subscribeOn(Schedulers.single())
                .subscribe(
                    v -> { /* onNext is not called for Mono<Void>, do nothing */ },

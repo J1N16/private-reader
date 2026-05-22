@@ -2,9 +2,10 @@ package com.lv.tool.privatereader.service;
 
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.parser.NovelParser.Chapter;
+import io.reactivex.rxjava3.core.Completable;
+import io.reactivex.rxjava3.core.Observable;
+import io.reactivex.rxjava3.core.Single;
 import org.jetbrains.annotations.NotNull;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
 import java.util.List;
 
@@ -20,7 +21,7 @@ public interface ChapterService {
      * @param chapterId 章节ID
      * @return 章节对象
      */
-    Mono<Chapter> getChapter(@NotNull Book book, @NotNull String chapterId);
+    Single<Chapter> getChapter(@NotNull Book book, @NotNull String chapterId);
 
     /**
      * 获取章节对象，如果获取失败则尝试使用缓存中的过期内容
@@ -29,7 +30,7 @@ public interface ChapterService {
      * @param chapterId 章节ID
      * @return 章节对象
      */
-    Mono<Chapter> getChapterWithFallback(@NotNull Book book, @NotNull String chapterId);
+    Single<Chapter> getChapterWithFallback(@NotNull Book book, @NotNull String chapterId);
 
     /**
      * 获取章节列表
@@ -37,7 +38,7 @@ public interface ChapterService {
      * @param book 书籍
      * @return 章节列表
      */
-    Mono<List<Chapter>> getChapterList(@NotNull Book book);
+    Single<List<Chapter>> getChapterList(@NotNull Book book);
 
     /**
      * 清除书籍缓存
@@ -45,15 +46,15 @@ public interface ChapterService {
      * @param book 书籍
      * @return 完成信号
      */
-    Mono<Void> clearBookCache(@NotNull Book book);
+    Completable clearBookCache(@NotNull Book book);
 
     /**
      * 清除所有缓存
      *
      * @return 完成信号
      */
-    Mono<Void> clearAllCache();
-    
+    Completable clearAllCache();
+
     /**
      * 获取章节内容 (同步)
      *
@@ -70,16 +71,16 @@ public interface ChapterService {
      * @param chapterId 章节ID
      * @return 章节标题
      */
-    Mono<String> getChapterTitle(@NotNull String bookId, @NotNull String chapterId);
+    Single<String> getChapterTitle(@NotNull String bookId, @NotNull String chapterId);
 
     /**
      * 获取章节内容 (异步)
      *
      * @param book      书籍
      * @param chapterId 章节ID
-     * @return 章节内容的Mono
+     * @return 章节内容的 Single
      */
-    Mono<String> getChapterContent(@NotNull Book book, @NotNull String chapterId);
+    Single<String> getChapterContent(@NotNull Book book, @NotNull String chapterId);
 
     /**
      * 扩展章节类，包含内容

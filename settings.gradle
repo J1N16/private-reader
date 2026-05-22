@@ -1,1 +1,20 @@
-rootProject.name = 'private-reader' 
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        maven {
+            url = uri("https://cache-redirector.jetbrains.com/intellij-plugin-maven-releases")
+        }
+        maven {
+            url = uri("https://cache-redirector.jetbrains.com/intellij-dependencies")
+        }
+        maven {
+            url = uri("https://cache-redirector.jetbrains.com/intellij-repository/releases")
+        }
+    }
+}
+
+plugins {
+    id 'org.jetbrains.intellij.platform' version '2.3.0' apply false
+}
+
+rootProject.name = 'private-reader'

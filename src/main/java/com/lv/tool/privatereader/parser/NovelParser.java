@@ -1,10 +1,10 @@
 package com.lv.tool.privatereader.parser;
 
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.repository.ChapterCacheRepository;
 import com.lv.tool.privatereader.repository.RepositoryModule;
-import com.lv.tool.privatereader.storage.cache.ChapterCacheManager;
 import com.intellij.util.xmlb.annotations.Tag;
 import org.jetbrains.annotations.NotNull;
 import com.google.gson.annotations.Expose;
@@ -69,16 +69,9 @@ public interface NovelParser {
      * 优先使用缓存，缓存不存在或过期时才获取新内容
      */
     default String getChapterContent(String chapterId, Book book) {
-        Project project = book.getProject();
-        if (project == null) {
-            // 不再需要抛出异常，因为我们现在从应用级别获取服务
-            // 但为了兼容性，我们记录一个警告
-            System.out.println("警告: Book project 未设置，但将尝试从应用级别获取服务");
-        }
-
-        // 如果应用级别实现的Cache可用，先检查缓存
+        // 获取缓存仓库
         ChapterCacheRepository cacheRepository = null;
-        
+
         // 尝试从RepositoryModule获取
         try {
             RepositoryModule repositoryModule = RepositoryModule.getInstance();
@@ -88,39 +81,9 @@ public interface NovelParser {
         } catch (Exception e) {
             LOG.debug("获取ChapterCacheRepository失败: " + e.getMessage());
         }
-        
-        // 如果无法获取新的Repository，尝试使用旧的缓存管理器
-        if (cacheRepository == null && project != null) {
-            // 只有在 project 不为 null 时才尝试从项目级别获取服务
-            ChapterCacheManager cacheManager = project.getService(ChapterCacheManager.class);
-            if (cacheManager != null) {
-                // 使用旧的缓存管理器
-                String cachedContent = cacheManager.getCachedContent(book.getId(), chapterId);
-                if (cachedContent != null) {
-                    return cachedContent;
-                }
-                
-                try {
-                    String content = parseChapterContent(chapterId);
-                    cacheManager.cacheContent(book.getId(), chapterId, content);
-                    return content;
-                } catch (Exception e) {
-                    String fallbackContent = cacheManager.getFallbackCachedContent(book.getId(), chapterId);
-                    if (fallbackContent != null) {
-                        return fallbackContent;
-                    }
-                    return "章节内容暂时无法访问：" + e.getMessage();
-                }
-            } else {
-                // 如果连旧的缓存管理器也不可用，直接解析内容
-                try {
-                    return parseChapterContent(chapterId);
-                } catch (Exception e) {
-                    return "章节内容暂时无法访问：" + e.getMessage();
-                }
-            }
-        } else if (cacheRepository == null) {
-            // 如果无法获取任何缓存服务，直接解析内容
+
+        // 如果无法获取缓存服务，直接解析内容
+        if (cacheRepository == null) {
             try {
                 return parseChapterContent(chapterId);
             } catch (Exception e) {

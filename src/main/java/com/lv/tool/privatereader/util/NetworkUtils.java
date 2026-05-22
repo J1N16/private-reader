@@ -48,6 +48,7 @@ public class NetworkUtils {
      * @param timeoutMs 超时时间（毫秒）
      * @return 网络是否可用的CompletableFuture
      */
+    @SuppressWarnings("unchecked")
     public static CompletableFuture<Boolean> isNetworkAvailableAsync(int timeoutMs) {
         LOG.info("开始异步检查网络连接...");
 

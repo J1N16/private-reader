@@ -22,7 +22,7 @@ import com.lv.tool.privatereader.events.ChapterChangeManager;
 import com.lv.tool.privatereader.events.ChapterChangeEventSource;
 import com.lv.tool.privatereader.service.NotificationService;
 import com.intellij.util.ui.JBUI;
-import reactor.core.publisher.Mono;
+import io.reactivex.rxjava3.core.Completable;
 import com.lv.tool.privatereader.ui.mvi.ReaderViewModel;
 import com.lv.tool.privatereader.ui.mvi.ReaderUiState;
 import com.lv.tool.privatereader.ui.mvi.IReaderIntent;
@@ -143,11 +143,6 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
                 }
             }
         });
-
-        // 设置章节加载完成回调
-        // uiAdapter.setOnChaptersLoaded(this::selectLastReadChapter); // REMOVED
-        // 设置书籍加载完成回调
-        // uiAdapter.setOnBooksLoaded(this::selectAndHighlightLastReadBook); // REMOVED
 
         // 初始化UI组件
         booksListModel = new DefaultListModel<>();
@@ -277,6 +272,7 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
                 Book newlySelectedBook = booksList.getSelectedValue();
                 // 关键修复：只有当用户的选择与当前UI状态不一致时，才发送意图，以打破渲染循环
                 if (newlySelectedBook != null && !newlySelectedBook.getId().equals(currentUiState.getSelectedBookId())) {
+                    chapterChangeManager.setEventSource(ChapterChangeEventSource.READER_PANEL);
                     viewModel.processIntent(new IReaderIntent.SelectBook(newlySelectedBook.getId()));
                 }
             }
@@ -356,19 +352,20 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
 
     /**
      * 在书籍加载完成后选择并高亮最后阅读的书籍
+     * @deprecated 此方法已由 ViewModel 和 render 方法处理，保留用于向后兼容
      */
+    @Deprecated
     private void selectAndHighlightLastReadBook() {
-        LOG.info("选择并高亮最后阅读的书籍...");
-        // This logic is now handled by the ViewModel and the render method.
-        // This method can be removed.
+        // 此逻辑已由 ViewModel 和 render 方法处理
     }
 
     /**
      * 选择并高亮第一本书 (如果列表不为空)
+     * @deprecated 此方法已由 ViewModel 和 render 方法处理，保留用于向后兼容
      */
+    @Deprecated
     private void selectAndHighlightFirstBook() {
-        // This logic is now handled by the ViewModel and the render method.
-        // This method can be removed.
+        // 此逻辑已由 ViewModel 和 render 方法处理
     }
 
     /**
@@ -387,10 +384,6 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
         // This is now handled by the ViewModel.
     }
 
-    // 防抖后真正加载章节内容的方法
-    private void loadChapterContentDebounced(Book book, Chapter chapter, String requestId) {
-        // This is now handled by the ViewModel.
-    }
 
     /**
      * Restores scroll position based on the book's progress data.
@@ -535,12 +528,12 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
 
     /**
      * 保存当前阅读进度
-     * @return 返回一个 Mono<Void>，表示异步保存操作，如果不需要保存则返回 Mono.empty()
+     * @return 返回一个 Completable，表示异步保存操作，如果不需要保存则返回 Completable.complete()
      */
-    private Mono<Void> saveCurrentProgress() {
+    private Completable saveCurrentProgress() {
         if (bookService == null) {
             LOG.warn("BookService 未初始化，无法保存进度");
-            return Mono.empty();
+            return Completable.complete();
         }
         if (selectedBook != null && selectedChapter != null) {
             int position = contentScrollPane.getVerticalScrollBar().getValue();
@@ -549,21 +542,21 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
                       + ", 滚动位置=" + position);
             try {
                 // 直接在当前线程设置Book对象的属性，避免线程切换
-                selectedBook.updateReadingProgress(selectedChapter.url(), position, 
-                    contentScrollPane.getVerticalScrollBar().getValue() > 0 ? 
+                selectedBook.updateReadingProgress(selectedChapter.url(), position,
+                    contentScrollPane.getVerticalScrollBar().getValue() > 0 ?
                     selectedBook.getLastReadPage() : 1);
-                
+
                 // 调用响应式BookService方法保存进度
                 return bookService.saveReadingProgress(selectedBook, selectedChapter.url(), selectedChapter.title(), position)
                        .doOnError(e -> LOG.error("保存阅读进度失败: " + e.getMessage(), e))
-                       .doOnSuccess(v -> LOG.debug("阅读进度保存成功"));
+                       .doOnComplete(() -> LOG.debug("阅读进度保存成功"));
             } catch (Exception e) {
                 LOG.error("初始化保存进度操作时发生错误: " + e.getMessage(), e);
-                return Mono.error(e);
+                return Completable.error(e);
             }
         } else {
             LOG.debug("跳过保存进度: 未选择书籍或章节");
-            return Mono.empty();
+            return Completable.complete();
         }
     }
 
@@ -1090,7 +1083,6 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
         
         }
         
-        currentChapterDisplayLabel.setText(state.getCurrentChapterTitle());
         currentChapterDisplayLabel.setText(state.getCurrentChapterTitle());
         String newContent = state.isLoadingContent() ? "" : state.getContent();
         if (newContent == null) {

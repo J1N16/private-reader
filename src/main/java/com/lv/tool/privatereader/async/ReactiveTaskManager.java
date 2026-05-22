@@ -3,10 +3,10 @@ package com.lv.tool.privatereader.async;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.intellij.openapi.diagnostic.Logger;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
-import reactor.util.retry.Retry;
+import io.reactivex.rxjava3.core.Observable;
+import io.reactivex.rxjava3.core.Single;
+import io.reactivex.rxjava3.disposables.Disposable;
+import io.reactivex.rxjava3.schedulers.Schedulers;
 
 import java.time.Duration;
 import java.util.Map;
@@ -19,7 +19,7 @@ import java.util.function.Supplier;
 
 /**
  * 响应式任务管理器
- * 使用Project Reactor实现响应式异步任务处理
+ * 使用RxJava3实现响应式异步任务处理
  */
 public class ReactiveTaskManager {
     private static final Logger LOG = Logger.getInstance(ReactiveTaskManager.class);
@@ -27,24 +27,25 @@ public class ReactiveTaskManager {
     private static final int DEFAULT_MAX_RETRIES = 3;
     private static final long DEFAULT_RETRY_DELAY_MS = 1000;
     private static final long DEFAULT_TIMEOUT_MS = 30000;
-    
+
     // 限制任务指标Map的大小，防止因动态任务名导致的内存泄漏
     // 最多保留500个任务的指标，写入后24小时过期
     private final Cache<String, TaskInfo<?>> taskMetrics = CacheBuilder.newBuilder()
             .maximumSize(500)
             .expireAfterWrite(24, TimeUnit.HOURS)
             .build();
-            
-    private final Map<String, Mono<?>> runningTasks = new ConcurrentHashMap<>();
-    
+
+    private final Map<String, Disposable> runningTasks = new ConcurrentHashMap<>();
+    private final Disposable monitorDisposable;
+
     private static class SingletonHolder {
         private static final ReactiveTaskManager INSTANCE = new ReactiveTaskManager();
     }
-    
+
     public static ReactiveTaskManager getInstance() {
         return SingletonHolder.INSTANCE;
     }
-    
+
     private static class TaskInfo<T> {
         final AtomicLong totalExecutionTime = new AtomicLong();
         final AtomicInteger executionCount = new AtomicInteger();
@@ -53,22 +54,22 @@ public class ReactiveTaskManager {
         volatile Throwable lastError;
         volatile long lastExecutionTime;
         volatile long startTime;
-        
+
         void recordExecution(long executionTime) {
             totalExecutionTime.addAndGet(executionTime);
             executionCount.incrementAndGet();
             lastExecutionTime = System.currentTimeMillis();
         }
-        
+
         void recordFailure(Throwable error) {
             failureCount.incrementAndGet();
             lastError = error;
         }
-        
+
         void recordRetry() {
             retryCount.incrementAndGet();
         }
-        
+
         Map<String, Object> getMetrics() {
             return Map.of(
                 "totalExecutionTime", totalExecutionTime.get(),
@@ -80,33 +81,36 @@ public class ReactiveTaskManager {
             );
         }
     }
-    
+
     private ReactiveTaskManager() {
         // 启动监控任务
-        Flux.interval(Duration.ofMinutes(1))
+        monitorDisposable = Observable.interval(1, TimeUnit.MINUTES)
             .doOnNext(tick -> monitorTasks())
             .subscribe();
     }
-    
+
     /**
-     * 提交任务并返回响应式Mono
+     * 提交任务并返回响应式Single
      * @param taskName 任务名称
      * @param task 任务供应商
      * @param options 任务选项
-     * @return 包含任务结果的Mono
+     * @return 包含任务结果的Single
      */
-    public <T> Mono<T> submitTask(String taskName, Supplier<T> task, TaskOptions options) {
+    public <T> Single<T> submitTask(String taskName, Supplier<T> task, TaskOptions options) {
         TaskInfo<T> taskInfo;
         try {
-            taskInfo = (TaskInfo<T>) taskMetrics.get(taskName, TaskInfo::new);
+            @SuppressWarnings("unchecked")
+            TaskInfo<T> cached = (TaskInfo<T>) taskMetrics.get(taskName, TaskInfo::new);
+            taskInfo = cached;
         } catch (Exception e) {
             taskInfo = new TaskInfo<>();
         }
         final TaskInfo<T> finalTaskInfo = taskInfo;
-        
-        Mono<T> taskMono = Mono.fromSupplier(task)
-            .subscribeOn(Schedulers.boundedElastic())
-            .doOnSubscribe(s -> {
+
+        Single<T> taskSingle = Single.fromCallable(task::get)
+            .subscribeOn(Schedulers.io())
+            .doOnSubscribe(disposable -> {
+                runningTasks.put(taskName, disposable);
                 finalTaskInfo.startTime = System.currentTimeMillis();
                 LOG.info("开始执行任务: " + taskName);
             })
@@ -122,40 +126,41 @@ public class ReactiveTaskManager {
                     options.errorHandler.accept(error);
                 }
             })
-            .doFinally(signalType -> runningTasks.remove(taskName));
-        
+            .doFinally(() -> runningTasks.remove(taskName));
+
         // 添加重试逻辑
         if (options.maxRetries > 0) {
-            taskMono = taskMono.retryWhen(
-                Retry.backoff(options.maxRetries, Duration.ofMillis(options.retryDelayMs))
-                    .doBeforeRetry(retrySignal -> {
+            taskSingle = taskSingle.retryWhen(errors -> {
+                AtomicInteger retryCount = new AtomicInteger(0);
+                return errors.flatMapSingle(error -> {
+                    if (retryCount.incrementAndGet() <= options.maxRetries) {
                         finalTaskInfo.recordRetry();
-                        LOG.warn("重试任务: " + taskName + ", 第" + retrySignal.totalRetries() + "次");
-                    })
-            );
+                        LOG.warn("重试任务: " + taskName + ", 第" + retryCount.get() + "次");
+                        return Single.timer(options.retryDelayMs, TimeUnit.MILLISECONDS);
+                    }
+                    return Single.error(error);
+                });
+            });
         }
-        
+
         // 添加超时控制
         if (options.timeoutMs > 0) {
-            taskMono = taskMono.timeout(Duration.ofMillis(options.timeoutMs));
+            taskSingle = taskSingle.timeout(options.timeoutMs, TimeUnit.MILLISECONDS);
         }
-        
-        // 缓存任务引用
-        runningTasks.put(taskName, taskMono);
-        
-        return taskMono;
+
+        return taskSingle;
     }
-    
+
     /**
      * 使用默认选项提交任务
      * @param taskName 任务名称
      * @param task 任务供应商
-     * @return 包含任务结果的Mono
+     * @return 包含任务结果的Single
      */
-    public <T> Mono<T> submitTask(String taskName, Supplier<T> task) {
+    public <T> Single<T> submitTask(String taskName, Supplier<T> task) {
         return submitTask(taskName, task, new TaskOptions());
     }
-    
+
     /**
      * 任务选项配置类
      */
@@ -165,42 +170,42 @@ public class ReactiveTaskManager {
         long retryDelayMs = DEFAULT_RETRY_DELAY_MS;
         long timeoutMs = DEFAULT_TIMEOUT_MS;
         Consumer<Throwable> errorHandler = null;
-        
+
         public TaskOptions setPriority(int priority) {
             this.priority = priority;
             return this;
         }
-        
+
         public TaskOptions setMaxRetries(int maxRetries) {
             this.maxRetries = maxRetries;
             return this;
         }
-        
+
         public TaskOptions setRetryDelay(long delayMs) {
             this.retryDelayMs = delayMs;
             return this;
         }
-        
+
         public TaskOptions setTimeout(long timeoutMs) {
             this.timeoutMs = timeoutMs;
             return this;
         }
-        
+
         public TaskOptions setErrorHandler(Consumer<Throwable> handler) {
             this.errorHandler = handler;
             return this;
         }
     }
-    
+
     /**
      * 监控任务执行情况
      */
     private void monitorTasks() {
         try {
             int activeCount = runningTasks.size();
-            
+
             LOG.info(String.format("Reactive Task Pool Status: active=%d", activeCount));
-            
+
             taskMetrics.asMap().forEach((taskName, info) -> {
                 LOG.info(String.format("Task '%s' metrics: %s", taskName, info.getMetrics()));
             });
@@ -208,17 +213,21 @@ public class ReactiveTaskManager {
             LOG.error("监控任务执行失败", e);
         }
     }
-    
+
     /**
      * 取消正在执行的任务
      * @param taskName 任务名称
      * @return 是否成功取消
      */
     public boolean cancelTask(String taskName) {
-        Mono<?> task = runningTasks.remove(taskName);
-        return task != null;
+        Disposable task = runningTasks.remove(taskName);
+        if (task != null) {
+            task.dispose();
+            return true;
+        }
+        return false;
     }
-    
+
     /**
      * 检查任务是否正在运行
      * @param taskName 任务名称
@@ -227,7 +236,7 @@ public class ReactiveTaskManager {
     public boolean isTaskRunning(String taskName) {
         return runningTasks.containsKey(taskName);
     }
-    
+
     /**
      * 取消以指定前缀开头的所有任务
      * @param prefix 任务名称前缀
@@ -237,15 +246,16 @@ public class ReactiveTaskManager {
         boolean cancelled = false;
         for (String taskName : runningTasks.keySet()) {
             if (taskName.startsWith(prefix)) {
-                Mono<?> task = runningTasks.remove(taskName);
+                Disposable task = runningTasks.remove(taskName);
                 if (task != null) {
+                    task.dispose();
                     cancelled = true;
                 }
             }
         }
         return cancelled;
     }
-    
+
     /**
      * 获取指定任务的度量信息
      * @param taskName 任务名称
@@ -255,7 +265,7 @@ public class ReactiveTaskManager {
         TaskInfo<?> info = taskMetrics.getIfPresent(taskName);
         return info != null ? info.getMetrics() : Map.of();
     }
-    
+
     /**
      * 获取所有任务的度量信息
      * @return 所有任务的度量信息
@@ -266,12 +276,13 @@ public class ReactiveTaskManager {
             allMetrics.put(taskName, info.getMetrics()));
         return allMetrics;
     }
-    
+
     /**
      * 关闭任务管理器
      */
     public void shutdown() {
-        // Reactor不需要显式关闭，但可以取消所有正在运行的任务
+        monitorDisposable.dispose();
+        runningTasks.values().forEach(Disposable::dispose);
         runningTasks.clear();
     }
-} 
+}

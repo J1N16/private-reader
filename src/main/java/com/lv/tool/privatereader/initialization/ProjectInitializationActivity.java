@@ -6,11 +6,9 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.startup.StartupActivity;
-import com.lv.tool.privatereader.config.GuiceInjector;
 import com.lv.tool.privatereader.service.BookService;
 import com.lv.tool.privatereader.service.ReaderModeSwitcher;
 import com.lv.tool.privatereader.settings.PluginSettings;
-import com.lv.tool.privatereader.storage.BookFileStorage;
 import com.lv.tool.privatereader.ui.ReaderPanel;
 import com.lv.tool.privatereader.ui.ReaderToolWindowFactory;
 import org.jetbrains.annotations.NotNull;
@@ -33,14 +31,10 @@ public class ProjectInitializationActivity implements StartupActivity, DumbAware
         LOG.info("ProjectInitializationActivity: Performing one-time initialization for project: " + project.getName());
 
         try {
-            // 1. 初始化Guice依赖注入 (Ensure it's safe to call multiple times or is idempotent)
-            initGuiceInjection(); // Copied from ProjectOpenListener
-
-            // 2. 检查插件是否启用
-            PluginSettings settings = GuiceInjector.getInstance(PluginSettings.class);
+            // 1. 检查插件是否启用
+            PluginSettings settings = ApplicationManager.getApplication().getService(PluginSettings.class);
             if (settings == null || !settings.isEnabled()) {
                 LOG.info("ProjectInitializationActivity: Plugin disabled, skipping initialization for project: " + project.getName());
-                // Do NOT put null in PROJECT_PANELS, factory needs to handle absent panel.
                 return;
             }
 
@@ -113,42 +107,24 @@ public class ProjectInitializationActivity implements StartupActivity, DumbAware
         }
     }
 
-    // --- Helper Methods (Copied from ProjectOpenListener) ---
-
-    /**
-     * 初始化Guice依赖注入
-     */
-    private static void initGuiceInjection() {
-        // This method is static and has its own initialization check
-        try {
-            // Check if Guice is already initialized (optional, Guice might handle this)
-             if (GuiceInjector.isInitialized()) {
-                 LOG.info("ProjectInitializationActivity: Guice already initialized, skipping re-initialization.");
-                 return;
-             }
-            LOG.info("ProjectInitializationActivity: Initializing Guice dependency injection..." + Thread.currentThread().getName());
-            GuiceInjector.initialize();
-            LOG.info("ProjectInitializationActivity: Guice dependency injection initialized successfully." + Thread.currentThread().getName());
-        } catch (Exception e) {
-            LOG.error("ProjectInitializationActivity: Failed to initialize Guice dependency injection", e);
-        }
-    }
+    // --- Helper Methods ---
 
     /**
      * 清理旧的配置文件
      */
     private static void cleanupLegacyFiles(@NotNull Project project) {
-        // This method is static
         try {
-            LOG.info("ProjectInitializationActivity: Cleaning up legacy configuration files in project: " + project.getName());
-            if (project.getBasePath() != null) {
-                BookFileStorage.cleanLegacyProjectFile(project.getBasePath());
-                LOG.info("ProjectInitializationActivity: Legacy file cleanup successful for project: " + project.getName());
-            } else {
-                LOG.warn("ProjectInitializationActivity: Could not get project base path, skipping cleanup for project: " + project.getName());
+            String basePath = project.getBasePath();
+            if (basePath == null) {
+                LOG.warn("ProjectInitializationActivity: Could not get project base path, skipping cleanup");
+                return;
+            }
+            java.io.File legacyFile = new java.io.File(basePath, ".idea/private-reader-books.xml");
+            if (legacyFile.exists() && legacyFile.delete()) {
+                LOG.info("ProjectInitializationActivity: Deleted legacy file: " + legacyFile.getAbsolutePath());
             }
         } catch (Exception e) {
-            LOG.error("ProjectInitializationActivity: Exception during legacy file cleanup for project: " + project.getName(), e);
+            LOG.error("ProjectInitializationActivity: Exception during legacy file cleanup", e);
         }
     }
 } 

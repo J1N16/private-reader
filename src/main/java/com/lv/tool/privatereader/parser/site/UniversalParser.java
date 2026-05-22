@@ -81,7 +81,7 @@ public final class UniversalParser implements NovelParser {
             LOG.info("成功获取页面内容，长度: " + document.html().length());
             return true;
         } catch (IOException e) {
-            LOG.error("连接网址失败: " + url + ", 错误: " + e.getMessage(), e);
+            LOG.warn("连接网址失败: " + url + ", 错误: " + e.getMessage(), e);
             lastInitError = e;
             return false;
         } catch (Exception e) {
@@ -117,7 +117,7 @@ public final class UniversalParser implements NovelParser {
             LOG.info("识别到书籍标题: " + title);
             return title;
         } catch (IOException e) {
-            LOG.error("获取书籍标题时发生错误: " + e.getMessage(), e);
+            LOG.warn("获取书籍标题时发生错误: " + e.getMessage(), e);
             // 从URL中提取一个基本标题作为后备
             String urlPath = url.replaceAll("https?://[^/]+/", "");
             String[] pathSegments = urlPath.split("/");
@@ -146,7 +146,7 @@ public final class UniversalParser implements NovelParser {
             LOG.info("识别到作者: " + author);
             return author;
         } catch (IOException e) {
-            LOG.error("获取作者信息时发生错误: " + e.getMessage(), e);
+            LOG.warn("获取作者信息时发生错误: " + e.getMessage(), e);
             return "未知作者";
         }
     }
@@ -186,7 +186,7 @@ public final class UniversalParser implements NovelParser {
                 }
             }
         } catch (IOException e) {
-            LOG.error("解析章节列表时发生错误: " + e.getMessage(), e);
+            LOG.warn("解析章节列表时发生错误: " + e.getMessage(), e);
             // 返回空列表，不抛出异常
         }
 
@@ -250,7 +250,7 @@ public final class UniversalParser implements NovelParser {
             // 使用同步方法实现
             return parseChapterContentInternal(chapterId);
         } catch (Exception e) {
-            LOG.error("解析章节内容时发生错误: " + e.getMessage(), e);
+            LOG.warn("解析章节内容时发生错误: " + e.getMessage(), e);
             throw new PrivateReaderException(
                 "解析章节内容失败: " + e.getMessage(),
                 e,

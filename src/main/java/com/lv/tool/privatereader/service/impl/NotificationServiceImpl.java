@@ -20,15 +20,20 @@ import com.lv.tool.privatereader.model.BookProgressData;
 import com.lv.tool.privatereader.parser.NovelParser;
 import com.lv.tool.privatereader.parser.NovelParser.Chapter;
 import com.lv.tool.privatereader.repository.impl.SqliteReadingProgressRepository;
+import com.lv.tool.privatereader.config.PrivateReaderConfig;
 import com.lv.tool.privatereader.service.BookService;
 import com.lv.tool.privatereader.service.ChapterService;
 import com.lv.tool.privatereader.service.NotificationService;
+import com.lv.tool.privatereader.service.impl.notification.ChapterNavigationHelper;
+import com.lv.tool.privatereader.service.impl.notification.ProgressSaveHelper;
 import com.lv.tool.privatereader.settings.NotificationReaderSettings;
 import com.lv.tool.privatereader.settings.ReaderModeSettings;
 import com.lv.tool.privatereader.storage.cache.ReactiveChapterPreloader;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import reactor.core.publisher.Mono;
+import io.reactivex.rxjava3.core.Completable;
+import io.reactivex.rxjava3.core.Single;
+import io.reactivex.rxjava3.schedulers.Schedulers;
 import com.intellij.openapi.application.ModalityState;
 
 import java.util.ArrayList;
@@ -46,10 +51,9 @@ import java.util.concurrent.atomic.AtomicReference;
  * 3. 如果我们使用 bookService.saveReadingProgress 方法，它会再次将 currentPageIndex 加1，导致页码始终是1
  * 4. 我们应该直接使用 SqliteReadingProgressRepository 类的 updateProgress 方法的重载版本，直接传递页码参数
  */
-@Service
+@Service(Service.Level.APP)
 public final class NotificationServiceImpl implements NotificationService, Disposable {
     private static final Logger LOG = Logger.getInstance(NotificationServiceImpl.class);
-    private static final String NOTIFICATION_GROUP_ID = "PrivateReader";
     // 通知相关字段
     private final AtomicReference<Notification> currentNotificationRef = new AtomicReference<>(null);
     private MessageBusConnection messageBusConnection;
@@ -185,34 +189,10 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
                     
                     // 检查是否有保存的页码信息
                     int savedPageNumber = pageNumber;
-                    
+
                     // 如果传入的页码是1（默认值），尝试从数据库中获取保存的页码
                     if (pageNumber == 1) {
-                        try {
-                            // 获取 SqliteReadingProgressRepository 实例
-                            SqliteReadingProgressRepository readingProgressRepository = ApplicationManager.getApplication().getService(SqliteReadingProgressRepository.class);
-                            if (readingProgressRepository != null) {
-                                // 获取书籍的阅读进度
-                                Optional<BookProgressData> progressDataOpt = readingProgressRepository.getProgress(bookId);
-                                if (progressDataOpt.isPresent()) {
-                                    BookProgressData progressData = progressDataOpt.get();
-                                    // 检查章节ID是否匹配
-                                    if (chapterId.equals(progressData.lastReadChapterId())) {
-                                        // 使用保存的页码
-                                        savedPageNumber = progressData.lastReadPage();
-                                        LOG.debug(String.format("[页码调试] 从数据库恢复页码: %d", savedPageNumber));
-                                    } else {
-                                        LOG.debug("[页码调试] 章节ID不匹配，无法恢复页码");
-                                    }
-                                } else {
-                                    LOG.debug("[页码调试] 未找到书籍的阅读进度记录");
-                                }
-                            } else {
-                                LOG.warn("[页码调试] 无法获取 SqliteReadingProgressRepository 实例");
-                            }
-                        } catch (Exception e) {
-                            LOG.error("[页码调试] 恢复页码时出错", e);
-                        }
+                        savedPageNumber = restoreSavedPageNumber(bookId, chapterId, pageNumber);
                     }
                     
                     // 分页并设置当前页码
@@ -301,7 +281,7 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
         // 清理内容并创建通知
         String cleanContent = cleanHtmlTags(content);
         Notification notification = NotificationGroupManager.getInstance()
-                .getNotificationGroup(NOTIFICATION_GROUP_ID)
+                .getNotificationGroup(PrivateReaderConfig.NOTIFICATION_GROUP_ID_READER)
                 .createNotification(cleanContent, NotificationType.INFORMATION)
                 .setTitle(notificationTitle);
 
@@ -365,13 +345,13 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
     }
 
     @Override
-    public Mono<Notification> showError(@NotNull String title, @NotNull String message) {
+    public Single<Notification> showError(@NotNull String title, @NotNull String message) {
         ensureServicesInitialized();
         LOG.debug("NotificationServiceImpl: 显示错误: " + title + " - " + message);
         this.isLoadingChapter.set(false); // 清除正在加载章节状态，因为加载已失败
 
         Notification notification = NotificationGroupManager.getInstance()
-                .getNotificationGroup(NOTIFICATION_GROUP_ID)
+                .getNotificationGroup(PrivateReaderConfig.NOTIFICATION_GROUP_ID_READER)
                 .createNotification(message, NotificationType.ERROR);
 
         notification.setTitle(title);
@@ -379,16 +359,16 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
 
         // 记录日志
         LOG.debug("[通知栏模式] 显示错误通知: " + title);
-        return Mono.just(notification); // Return Mono for compatibility
+        return Single.just(notification); // Return Single for compatibility
     }
 
     @Override
-    public Mono<Notification> showInfo(@NotNull String title, @NotNull String message) {
+    public Single<Notification> showInfo(@NotNull String title, @NotNull String message) {
         ensureServicesInitialized();
         LOG.debug("NotificationServiceImpl: 显示信息: " + title + " - " + message);
 
         Notification notification = NotificationGroupManager.getInstance()
-                .getNotificationGroup(NOTIFICATION_GROUP_ID)
+                .getNotificationGroup(PrivateReaderConfig.NOTIFICATION_GROUP_ID_READER)
                 .createNotification(message, NotificationType.INFORMATION);
 
         notification.setTitle(title);
@@ -396,11 +376,11 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
 
         // 记录日志
         LOG.debug("[通知栏模式] 显示信息通知: " + title);
-        return Mono.just(notification); // Return Mono for compatibility
+        return Single.just(notification); // Return Single for compatibility
     }
 
     @Override
-    public Mono<Void> closeAllNotificationsReactive() {
+    public Completable closeAllNotificationsReactive() {
         ensureServicesInitialized();
         LOG.debug("NotificationServiceImpl (Reactive): 关闭所有通知");
         // This reactive method might be used by other parts of the application
@@ -410,7 +390,7 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
         if (existingNotification != null && !existingNotification.isExpired()) {
             existingNotification.expire();
         }
-        return Mono.empty().then();
+        return Completable.complete();
     }
 
     @Override
@@ -486,9 +466,9 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
             reactiveSchedulers.runOnUI(() -> processChapterNavigationWithCachedChapters(project, cachedChapters, direction));
         } else {
             LOG.info("Book中的cachedChapters为空，使用bookService.getChaptersSync获取章节列表");
-            Mono.fromCallable(() -> bookService.getChaptersSync(currentBook.getId()))
-                .subscribeOn(reactiveSchedulers.io())
-                .timeout(java.time.Duration.ofSeconds(30))
+            Single.fromCallable(() -> bookService.getChaptersSync(currentBook.getId()))
+                .subscribeOn(Schedulers.io())
+                .timeout(30, java.util.concurrent.TimeUnit.SECONDS)
                 .doOnError(e -> reactiveSchedulers.runOnUI(() -> showError("导航失败", "获取章节列表时出错: " + e.getMessage())))
                 .subscribe(chapters -> reactiveSchedulers.runOnUI(() -> processChapterNavigation(project, chapters, direction)));
         }
@@ -529,7 +509,7 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
 
         // 创建加载状态通知
         Notification notification = NotificationGroupManager.getInstance()
-                .getNotificationGroup(NOTIFICATION_GROUP_ID)
+                .getNotificationGroup(PrivateReaderConfig.NOTIFICATION_GROUP_ID_READER)
                 .createNotification(message, NotificationType.INFORMATION);
 
         notification.setTitle("加载中");
@@ -556,43 +536,31 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
             return;
         }
 
-        // 使用Book的章节索引Map查找当前章节索引，避免线性搜索
-        int currentIndex = -1;
-        if (currentBook != null) {
-            currentIndex = currentBook.getChapterIndex(currentChapterId);
-            LOG.info("使用章节索引Map查找章节，结果: " + currentIndex + ", 章节ID: " + currentChapterId);
-        }
-        
-        // 如果索引Map中没有找到，则回退到线性搜索
-        if (currentIndex == -1) {
-            LOG.info("索引Map中未找到章节，回退到线性搜索");
-            for (int i = 0; i < chapters.size(); i++) {
-                if (chapters.get(i).url().equals(currentChapterId)) {
-                    currentIndex = i;
-                    break;
-                }
+        // 提取章节URL列表
+        List<String> chapterUrls = chapters.stream().map(ChapterService.EnhancedChapter::url).toList();
+
+        // 使用工具类查找当前章节索引
+        int currentIndex = ChapterNavigationHelper.findChapterIndex(currentBook, currentChapterId, chapterUrls);
+
+        // 验证导航目标
+        String validationError = ChapterNavigationHelper.validateNavigation(currentIndex, direction, chapters.size());
+        if (validationError != null) {
+            LOG.warn(validationError);
+            if (currentIndex < 0) {
+                showError("导航失败", validationError);
+            } else {
+                showInfo("导航", validationError);
             }
-        }
-
-        if (currentIndex == -1) {
-            LOG.warn("当前章节在列表中未找到: " + currentChapterId);
-            showError("导航失败", "当前章节在列表中未找到");
             return;
         }
 
-        int targetIndex = currentIndex + direction;
-        if (targetIndex < 0 || targetIndex >= chapters.size()) {
-            String message = direction < 0 ? "已经是第一章了" : "已经是最后一章了";
-            LOG.warn(message);
-            showInfo("导航", message);
-            return;
-        }
+        int targetIndex = ChapterNavigationHelper.calculateTargetIndex(currentIndex, direction);
 
         // Get the target chapter and its content
         ChapterService.EnhancedChapter targetChapter = chapters.get(targetIndex);
         String targetChapterId = targetChapter.url();
         String targetChapterTitle = targetChapter.title();
-        String targetChapterContent = targetChapter.getContent(); // Get content from EnhancedChapter
+        String targetChapterContent = targetChapter.getContent();
 
         if (targetChapterContent == null || targetChapterContent.isEmpty()) {
              LOG.warn("目标章节内容为空: " + targetChapterId);
@@ -600,55 +568,38 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
              return;
         }
 
-        // Update current book, chapter, and page (reset to first page of new chapter)
+        // Update current book, chapter, and page
         this.currentChapterId = targetChapterId;
         this.currentChapterTitle = targetChapterTitle;
-        setCurrentChapterContent(targetChapterContent); // Paginate and set current pages for the new chapter
-        this.currentPageIndex = 0; // Start from the first page of the new chapter
+        setCurrentChapterContent(targetChapterContent);
+        this.currentPageIndex = 0;
 
-        // Show the first page of the new chapter
         if (currentPages.isEmpty()) {
             LOG.warn("分页后内容为空，无法显示通知: " + targetChapterId);
             showError("显示章节失败", "分页后内容为空");
             return;
         }
 
-        // 构建通知标题和内容
-        String title = currentBook.getTitle() + " - " + targetChapterTitle;
-        String pageContent = currentPages.get(currentPageIndex);
-        String progressText = notificationSettings != null && notificationSettings.isShowReadingProgress() ?
-                "进度: 第 " + (currentPageIndex + 1) + " 页，共 " + currentPages.size() + " 页" : "";
-        String notificationContent = pageContent + (progressText.isEmpty() ? "" : "\n\n" + progressText);
+        // 使用工具类构建通知内容并显示
+        String title = ProgressSaveHelper.buildNotificationTitle(currentBook.getTitle(), targetChapterTitle);
+        String notificationContent = ProgressSaveHelper.buildNotificationContent(
+            currentPages.get(currentPageIndex), currentPageIndex, currentPages.size(),
+            notificationSettings != null && notificationSettings.isShowReadingProgress());
 
-        // 使用内部方法显示通知，确保一致的格式和行为
         showCurrentPageInternal(project, title, notificationContent);
 
-        // Save reading progress for the new chapter (first page)
-        // 注意：不使用 bookService.saveReadingProgress 方法，因为它会将 currentPageIndex 加1
-        // 而我们已经从数据库中恢复的页码是1基索引，转换为 currentPageIndex 时减了1
-        // 如果再使用 bookService.saveReadingProgress 方法，它会再次将 currentPageIndex 加1，导致页码始终是1
-        SqliteReadingProgressRepository readingProgressRepository = ApplicationManager.getApplication().getService(SqliteReadingProgressRepository.class);
-        if (readingProgressRepository != null) {
-            // 使用带页码参数的重载方法，position设为0，直接使用currentPageIndex + 1作为页码
-            readingProgressRepository.updateProgress(currentBook, targetChapterId, targetChapterTitle, 0, currentPageIndex + 1);
-            LOG.info(String.format("[页码调试] 直接保存页码: %d", currentPageIndex + 1));
-        } else {
-            LOG.warn("[页码调试] 无法获取 SqliteReadingProgressRepository 实例，使用 bookService.saveReadingProgress 方法");
-            bookService.saveReadingProgress(currentBook, targetChapterId, targetChapterTitle, currentPageIndex);
-        }
+        // 使用工具类保存进度
+        ProgressSaveHelper.saveProgress(currentBook, targetChapterId, targetChapterTitle, currentPageIndex);
 
-        // 记录日志
         LOG.info("[通知栏模式] 导航到章节: " + targetChapterId);
 
         // 触发章节预加载
         triggerChapterPreload(currentBook, targetIndex);
 
-        // 设置事件源
+        // 设置事件源并发布章节变更事件
         if (chapterChangeManager != null) {
             chapterChangeManager.setEventSource(ChapterChangeEventSource.NOTIFICATION_SERVICE);
         }
-
-        // 发布章节变更事件，通知UI更新
         ApplicationManager.getApplication().getMessageBus()
                 .syncPublisher(CurrentChapterNotifier.TOPIC)
                 .currentChapterChanged(currentBook, new NovelParser.Chapter(targetChapterTitle, targetChapterId));
@@ -672,37 +623,25 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
             return;
         }
 
-        // 使用Book的章节索引Map查找当前章节索引，避免线性搜索
-        int currentIndex = -1;
-        if (currentBook != null) {
-            currentIndex = currentBook.getChapterIndex(currentChapterId);
-            LOG.info("使用章节索引Map查找章节，结果: " + currentIndex + ", 章节ID: " + currentChapterId);
-        }
-        
-        // 如果索引Map中没有找到，则回退到线性搜索
-        if (currentIndex == -1) {
-            LOG.info("索引Map中未找到章节，回退到线性搜索");
-            for (int i = 0; i < cachedChapters.size(); i++) {
-                if (cachedChapters.get(i).url().equals(currentChapterId)) {
-                    currentIndex = i;
-                    break;
-                }
+        // 提取章节URL列表
+        List<String> chapterUrls = cachedChapters.stream().map(Chapter::url).toList();
+
+        // 使用工具类查找当前章节索引
+        int currentIndex = ChapterNavigationHelper.findChapterIndex(currentBook, currentChapterId, chapterUrls);
+
+        // 验证导航目标
+        String validationError = ChapterNavigationHelper.validateNavigation(currentIndex, direction, cachedChapters.size());
+        if (validationError != null) {
+            LOG.warn(validationError);
+            if (currentIndex < 0) {
+                showError("导航失败", validationError);
+            } else {
+                showInfo("导航", validationError);
             }
-        }
-
-        if (currentIndex == -1) {
-            LOG.warn("当前章节在缓存列表中未找到: " + currentChapterId);
-            showError("导航失败", "当前章节在列表中未找到");
             return;
         }
 
-        int targetIndex = currentIndex + direction;
-        if (targetIndex < 0 || targetIndex >= cachedChapters.size()) {
-            String message = direction < 0 ? "已经是第一章了" : "已经是最后一章了";
-            LOG.warn(message);
-            showInfo("导航", message);
-            return;
-        }
+        int targetIndex = ChapterNavigationHelper.calculateTargetIndex(currentIndex, direction);
 
         // 获取目标章节
         Chapter targetChapter = cachedChapters.get(targetIndex);
@@ -710,21 +649,19 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
         String targetChapterTitle = targetChapter.title();
 
         // 使用异步方式获取章节内容，避免阻塞UI线程
-        Mono.fromCallable(() -> {
-            // 使用NovelParser获取章节内容
+        Single.fromCallable(() -> {
             if (currentBook.getParser() != null) {
                 return currentBook.getParser().getChapterContent(targetChapterId, currentBook);
             }
             return null;
         })
-        .subscribeOn(reactiveSchedulers.io()) // 在IO线程上执行
-        .timeout(java.time.Duration.ofSeconds(30)) // 设置超时
+        .subscribeOn(Schedulers.io())
+        .timeout(30, java.util.concurrent.TimeUnit.SECONDS)
         .doOnError(e -> {
             LOG.error("获取章节内容时出错: " + e.getMessage(), e);
             reactiveSchedulers.runOnUI(() -> showError("导航失败", "获取章节内容时出错: " + e.getMessage()));
         })
         .subscribe(content -> {
-            // 在获取到章节内容后，在UI线程上处理显示逻辑
             reactiveSchedulers.runOnUI(() -> {
                 if (content == null || content.isEmpty()) {
                     LOG.warn("目标章节内容为空: " + targetChapterId);
@@ -735,49 +672,34 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
                 // 更新当前章节信息
                 currentChapterId = targetChapterId;
                 currentChapterTitle = targetChapterTitle;
-
-                // 分页并设置为第一页
                 setCurrentChapterContent(content);
                 if (currentPages.isEmpty()) {
                     LOG.warn("[通知栏模式] 分页后内容为空，无法显示通知: " + targetChapterId);
                     showError("显示章节失败", "分页后内容为空");
                     return;
                 }
-
-                // 设置为第一页
                 currentPageIndex = 0;
 
-                // 构建通知标题和内容
-                String title = currentBook.getTitle() + " - " + targetChapterTitle;
-                String pageContent = currentPages.get(currentPageIndex);
-                String progressText = notificationSettings != null && notificationSettings.isShowReadingProgress() ?
-                        "进度: 第 " + (currentPageIndex + 1) + " 页，共 " + currentPages.size() + " 页" : "";
-                String notificationContent = pageContent + (progressText.isEmpty() ? "" : "\n\n" + progressText);
+                // 使用工具类构建通知内容并显示
+                String title = ProgressSaveHelper.buildNotificationTitle(currentBook.getTitle(), targetChapterTitle);
+                String notificationContent = ProgressSaveHelper.buildNotificationContent(
+                    currentPages.get(currentPageIndex), currentPageIndex, currentPages.size(),
+                    notificationSettings != null && notificationSettings.isShowReadingProgress());
 
-                // 显示通知
                 showCurrentPageInternal(project, title, notificationContent);
 
-                // 保存阅读进度
-                SqliteReadingProgressRepository readingProgressRepository = ApplicationManager.getApplication().getService(SqliteReadingProgressRepository.class);
-                if (readingProgressRepository != null) {
-                    readingProgressRepository.updateProgress(currentBook, targetChapterId, targetChapterTitle, 0, currentPageIndex + 1);
-                    LOG.info(String.format("[页码调试] 直接保存页码: %d", currentPageIndex + 1));
-                } else {
-                    LOG.warn("[页码调试] 无法获取 SqliteReadingProgressRepository 实例，使用 bookService.saveReadingProgress 方法");
-                    bookService.saveReadingProgress(currentBook, targetChapterId, targetChapterTitle, currentPageIndex);
-                }
+                // 使用工具类保存进度
+                ProgressSaveHelper.saveProgress(currentBook, targetChapterId, targetChapterTitle, currentPageIndex);
 
-                // 记录日志
                 LOG.info("[通知栏模式] 使用cachedChapters导航到章节: " + targetChapterId);
 
                 // 触发章节预加载
                 triggerChapterPreload(currentBook, targetIndex);
 
-                // 设置事件源
+                // 设置事件源并发布章节变更事件
                 if (chapterChangeManager != null) {
                     chapterChangeManager.setEventSource(ChapterChangeEventSource.NOTIFICATION_SERVICE);
                 }
-                // 发布章节变更事件
                 ApplicationManager.getApplication().getMessageBus()
                         .syncPublisher(CurrentChapterNotifier.TOPIC)
                         .currentChapterChanged(currentBook, targetChapter);
@@ -788,8 +710,8 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
 
     // Existing reactive methods (kept for compatibility if still used elsewhere)
     @Override
-    public Mono<Notification> showChapterContent(@NotNull Book book, @NotNull String chapterId, @NotNull String content) {
-        return Mono.defer(() -> chapterService.getChapterTitle(book.getId(), chapterId)
+    public Single<Notification> showChapterContent(@NotNull Book book, @NotNull String chapterId, @NotNull String content) {
+        return Single.defer(() -> chapterService.getChapterTitle(book.getId(), chapterId)
                 .flatMap(title -> {
                     ensureServicesInitialized();
                     LOG.info("[通知栏模式] (Reactive) 显示章节内容: " + book.getTitle() + " - " + chapterId + ", 内容长度: " + content.length());
@@ -811,31 +733,7 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
                     int savedPageNumber = 1; // 默认从第1页开始（对应索引0）
 
             // 尝试从数据库中获取保存的页码
-            try {
-                // 获取 SqliteReadingProgressRepository 实例
-                SqliteReadingProgressRepository readingProgressRepository = ApplicationManager.getApplication().getService(SqliteReadingProgressRepository.class);
-                if (readingProgressRepository != null) {
-                    // 获取书籍的阅读进度
-                    Optional<BookProgressData> progressDataOpt = readingProgressRepository.getProgress(book.getId());
-                    if (progressDataOpt.isPresent()) {
-                        BookProgressData progressData = progressDataOpt.get();
-                        // 检查章节ID是否匹配
-                        if (chapterId.equals(progressData.lastReadChapterId())) {
-                            // 使用保存的页码
-                            savedPageNumber = progressData.lastReadPage();
-                            LOG.info(String.format("[页码调试] (Reactive) 从数据库恢复页码: %d", savedPageNumber));
-                        } else {
-                            LOG.info("[页码调试] (Reactive) 章节ID不匹配，无法恢复页码");
-                        }
-                    } else {
-                        LOG.info("[页码调试] (Reactive) 未找到书籍的阅读进度记录");
-                    }
-                } else {
-                    LOG.warn("[页码调试] (Reactive) 无法获取 SqliteReadingProgressRepository 实例");
-                }
-            } catch (Exception e) {
-                LOG.error("[页码调试] (Reactive) 恢复页码时出错", e);
-            }
+            savedPageNumber = restoreSavedPageNumber(book.getId(), chapterId, savedPageNumber);
 
             // 记录恢复的页码
             LOG.info(String.format("[页码调试] (Reactive) 恢复的页码: %d", savedPageNumber));
@@ -925,46 +823,46 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
                     LOG.warn("[通知栏模式] (Reactive) 章节列表为空，无法预加载");
                 }
 
-                return Mono.just(currentNotificationRef.get());
+                return Single.just(currentNotificationRef.get());
             } else {
                 // 如果无法获取 Project 对象，使用简单的通知
                 LOG.warn("[通知栏模式] (Reactive) 无法获取 Project 对象，使用简单通知");
                 // 清理内容中的HTML标签
                 String cleanContent = cleanHtmlTags(notificationContent);
                 Notification notification = NotificationGroupManager.getInstance()
-                        .getNotificationGroup(NOTIFICATION_GROUP_ID)
+                        .getNotificationGroup(PrivateReaderConfig.NOTIFICATION_GROUP_ID_READER)
                         .createNotification(cleanContent, NotificationType.INFORMATION);
 
                 notification.setTitle(title);
                 notification.notify(null);
                 currentNotificationRef.set(notification);
-                return Mono.just(notification);
+                return Single.just(notification);
             }
-                })).subscribeOn(reactiveSchedulers.ui());
+                })).subscribeOn(Schedulers.io());
     }
 
     @Override
-    public Mono<Notification> showPrevPageReactive() {
+    public Single<Notification> showPrevPageReactive() {
         // This reactive method is likely for the main reader panel and might need different logic
         // For now, it will just log a warning
         LOG.warn("showPrevPageReactive called - Implementation needed for main reader panel.");
-        return Mono.empty(); // Or implement reactive page navigation for the main panel
+        return Single.error(new UnsupportedOperationException("Not implemented for notification bar mode"));
     }
 
     @Override
-    public Mono<Notification> showNextPageReactive() {
+    public Single<Notification> showNextPageReactive() {
          // This reactive method is likely for the main reader panel and might need different logic
         // For now, it will just log a warning
         LOG.warn("showNextPageReactive called - Implementation needed for main reader panel.");
-        return Mono.empty(); // Or implement reactive page navigation for the main panel
+        return Single.error(new UnsupportedOperationException("Not implemented for notification bar mode"));
     }
 
     @Override
-    public Mono<Notification> navigateChapterReactive(int direction) {
+    public Single<Notification> navigateChapterReactive(int direction) {
          // This reactive method is likely for the main reader panel and might need different logic
         // For now, it will just log a warning
         LOG.warn("navigateChapterReactive called - Implementation needed for main reader panel.");
-        return Mono.empty(); // Or implement reactive chapter navigation for the main panel
+        return Single.error(new UnsupportedOperationException("Not implemented for notification bar mode"));
     }
 
     @Override
@@ -1103,9 +1001,9 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
 
         // 如果cachedChapters为空，则使用异步方式获取章节列表
         LOG.info("Book中的cachedChapters为空，使用bookService.getChaptersSync获取章节列表");
-        Mono.fromCallable(() -> bookService.getChaptersSync(currentBook.getId()))
-            .subscribeOn(reactiveSchedulers.io()) // 在IO线程上执行
-            .timeout(java.time.Duration.ofSeconds(30)) // 设置超时
+        Single.fromCallable(() -> bookService.getChaptersSync(currentBook.getId()))
+            .subscribeOn(Schedulers.io()) // 在IO线程上执行
+            .timeout(30, java.util.concurrent.TimeUnit.SECONDS) // 设置超时
             .doOnError(e -> {
                 LOG.error("[通知栏模式] 获取章节列表时出错: " + e.getMessage(), e);
                 reactiveSchedulers.runOnUI(() -> showError("导航失败", "获取章节列表时出错: " + e.getMessage()));
@@ -1133,29 +1031,25 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
             return;
         }
 
-        // 查找当前章节的索引
-        int currentIndex = -1;
-        for (int i = 0; i < chapters.size(); i++) {
-            if (chapters.get(i).url().equals(currentChapterId)) {
-                currentIndex = i;
-                break;
+        // 提取章节URL列表
+        List<String> chapterUrls = chapters.stream().map(ChapterService.EnhancedChapter::url).toList();
+
+        // 使用工具类查找当前章节索引
+        int currentIndex = ChapterNavigationHelper.findChapterIndex(currentBook, currentChapterId, chapterUrls);
+
+        // 验证导航目标
+        String validationError = ChapterNavigationHelper.validateNavigation(currentIndex, direction, chapters.size());
+        if (validationError != null) {
+            LOG.warn("[通知栏模式] " + validationError);
+            if (currentIndex < 0) {
+                showError("导航失败", validationError);
+            } else {
+                showInfo("导航", validationError);
             }
-        }
-
-        if (currentIndex == -1) {
-            LOG.warn("[通知栏模式] 当前章节在列表中未找到: " + currentChapterId);
-            showError("导航失败", "当前章节在列表中未找到");
             return;
         }
 
-        // 计算目标章节的索引
-        int targetIndex = currentIndex + direction;
-        if (targetIndex < 0 || targetIndex >= chapters.size()) {
-            String message = direction < 0 ? "已经是第一章了" : "已经是最后一章了";
-            LOG.warn("[通知栏模式] " + message);
-            showInfo("导航", message);
-            return;
-        }
+        int targetIndex = ChapterNavigationHelper.calculateTargetIndex(currentIndex, direction);
 
         // 获取目标章节的信息
         ChapterService.EnhancedChapter targetChapter = chapters.get(targetIndex);
@@ -1180,46 +1074,28 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
             showError("显示章节失败", "分页后内容为空");
             return;
         }
-
-        // 设置为最后一页
         this.currentPageIndex = currentPages.size() - 1;
 
-        // 构建通知标题和内容
-        String title = currentBook.getTitle() + " - " + targetChapterTitle;
-        String pageContent = currentPages.get(currentPageIndex);
-        String progressText = notificationSettings != null && notificationSettings.isShowReadingProgress() ?
-                "进度: 第 " + (currentPageIndex + 1) + " 页，共 " + currentPages.size() + " 页" : "";
-        String notificationContent = pageContent + (progressText.isEmpty() ? "" : "\n\n" + progressText);
+        // 使用工具类构建通知内容并显示
+        String title = ProgressSaveHelper.buildNotificationTitle(currentBook.getTitle(), targetChapterTitle);
+        String notificationContent = ProgressSaveHelper.buildNotificationContent(
+            currentPages.get(currentPageIndex), currentPageIndex, currentPages.size(),
+            notificationSettings != null && notificationSettings.isShowReadingProgress());
 
-        // 显示通知
         showCurrentPageInternal(project, title, notificationContent);
 
-        // 保存阅读进度
-        // 注意：不使用 bookService.saveReadingProgress 方法，因为它会将 currentPageIndex 加1
-        // 而我们已经从数据库中恢复的页码是1基索引，转换为 currentPageIndex 时减了1
-        // 如果再使用 bookService.saveReadingProgress 方法，它会再次将 currentPageIndex 加1，导致页码始终是1
-        SqliteReadingProgressRepository readingProgressRepository = ApplicationManager.getApplication().getService(SqliteReadingProgressRepository.class);
-        if (readingProgressRepository != null) {
-            // 使用带页码参数的重载方法，position设为0，直接使用currentPageIndex + 1作为页码
-            readingProgressRepository.updateProgress(currentBook, targetChapterId, targetChapterTitle, 0, currentPageIndex + 1);
-            LOG.info(String.format("[页码调试] 直接保存页码: %d", currentPageIndex + 1));
-        } else {
-            LOG.warn("[页码调试] 无法获取 SqliteReadingProgressRepository 实例，使用 bookService.saveReadingProgress 方法");
-            bookService.saveReadingProgress(currentBook, targetChapterId, targetChapterTitle, currentPageIndex);
-        }
+        // 使用工具类保存进度
+        ProgressSaveHelper.saveProgress(currentBook, targetChapterId, targetChapterTitle, currentPageIndex);
 
-        // 记录日志
         LOG.info("[通知栏模式] 导航到章节的最后一页: " + targetChapterId);
 
         // 触发章节预加载
         triggerChapterPreload(currentBook, targetIndex);
 
-        // 设置事件源
+        // 设置事件源并发布章节变更事件
         if (chapterChangeManager != null) {
             chapterChangeManager.setEventSource(ChapterChangeEventSource.NOTIFICATION_SERVICE);
         }
-
-        // 发布章节变更事件
         ApplicationManager.getApplication().getMessageBus()
                 .syncPublisher(CurrentChapterNotifier.TOPIC)
                 .currentChapterChanged(currentBook, new NovelParser.Chapter(targetChapterTitle, targetChapterId));
@@ -1243,29 +1119,25 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
             return;
         }
 
-        // 查找当前章节的索引
-        int currentIndex = -1;
-        for (int i = 0; i < cachedChapters.size(); i++) {
-            if (cachedChapters.get(i).url().equals(currentChapterId)) {
-                currentIndex = i;
-                break;
+        // 提取章节URL列表
+        List<String> chapterUrls = cachedChapters.stream().map(Chapter::url).toList();
+
+        // 使用工具类查找当前章节索引
+        int currentIndex = ChapterNavigationHelper.findChapterIndex(currentBook, currentChapterId, chapterUrls);
+
+        // 验证导航目标
+        String validationError = ChapterNavigationHelper.validateNavigation(currentIndex, direction, cachedChapters.size());
+        if (validationError != null) {
+            LOG.warn("[通知栏模式] " + validationError);
+            if (currentIndex < 0) {
+                showError("导航失败", validationError);
+            } else {
+                showInfo("导航", validationError);
             }
-        }
-
-        if (currentIndex == -1) {
-            LOG.warn("[通知栏模式] 当前章节在缓存列表中未找到: " + currentChapterId);
-            showError("导航失败", "当前章节在列表中未找到");
             return;
         }
 
-        // 计算目标章节的索引
-        int targetIndex = currentIndex + direction;
-        if (targetIndex < 0 || targetIndex >= cachedChapters.size()) {
-            String message = direction < 0 ? "已经是第一章了" : "已经是最后一章了";
-            LOG.warn("[通知栏模式] " + message);
-            showInfo("导航", message);
-            return;
-        }
+        int targetIndex = ChapterNavigationHelper.calculateTargetIndex(currentIndex, direction);
 
         // 获取目标章节信息
         Chapter targetChapter = cachedChapters.get(targetIndex);
@@ -1276,21 +1148,19 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
         showLoadingNotification(project, "正在加载章节内容...");
 
         // 使用异步方式获取章节内容，避免阻塞UI线程
-        Mono.fromCallable(() -> {
-            // 使用NovelParser获取章节内容
+        Single.fromCallable(() -> {
             if (currentBook.getParser() != null) {
                 return currentBook.getParser().getChapterContent(targetChapterId, currentBook);
             }
             return null;
         })
-        .subscribeOn(reactiveSchedulers.io()) // 在IO线程上执行
-        .timeout(java.time.Duration.ofSeconds(30)) // 设置超时
+        .subscribeOn(Schedulers.io())
+        .timeout(30, java.util.concurrent.TimeUnit.SECONDS)
         .doOnError(e -> {
             LOG.error("获取章节内容时出错: " + e.getMessage(), e);
             reactiveSchedulers.runOnUI(() -> showError("导航失败", "获取章节内容时出错: " + e.getMessage()));
         })
         .subscribe(content -> {
-            // 在获取到章节内容后，在UI线程上处理显示逻辑
             reactiveSchedulers.runOnUI(() -> {
                 if (content == null || content.isEmpty()) {
                     LOG.warn("[通知栏模式] 目标章节内容为空: " + targetChapterId);
@@ -1301,49 +1171,34 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
                 // 更新当前章节信息
                 currentChapterId = targetChapterId;
                 currentChapterTitle = targetChapterTitle;
-
-                // 分页并设置为最后一页
                 setCurrentChapterContent(content);
                 if (currentPages.isEmpty()) {
                     LOG.warn("[通知栏模式] 分页后内容为空，无法显示通知: " + targetChapterId);
                     showError("显示章节失败", "分页后内容为空");
                     return;
                 }
-
-                // 设置为最后一页
                 currentPageIndex = currentPages.size() - 1;
 
-                // 构建通知标题和内容
-                String title = currentBook.getTitle() + " - " + targetChapterTitle;
-                String pageContent = currentPages.get(currentPageIndex);
-                String progressText = notificationSettings != null && notificationSettings.isShowReadingProgress() ?
-                        "进度: 第 " + (currentPageIndex + 1) + " 页，共 " + currentPages.size() + " 页" : "";
-                String notificationContent = pageContent + (progressText.isEmpty() ? "" : "\n\n" + progressText);
+                // 使用工具类构建通知内容并显示
+                String title = ProgressSaveHelper.buildNotificationTitle(currentBook.getTitle(), targetChapterTitle);
+                String notificationContent = ProgressSaveHelper.buildNotificationContent(
+                    currentPages.get(currentPageIndex), currentPageIndex, currentPages.size(),
+                    notificationSettings != null && notificationSettings.isShowReadingProgress());
 
-                // 显示通知
                 showCurrentPageInternal(project, title, notificationContent);
 
-                // 保存阅读进度
-                SqliteReadingProgressRepository readingProgressRepository = ApplicationManager.getApplication().getService(SqliteReadingProgressRepository.class);
-                if (readingProgressRepository != null) {
-                    readingProgressRepository.updateProgress(currentBook, targetChapterId, targetChapterTitle, 0, currentPageIndex + 1);
-                    LOG.info(String.format("[页码调试] 直接保存页码: %d", currentPageIndex + 1));
-                } else {
-                    LOG.warn("[页码调试] 无法获取 SqliteReadingProgressRepository 实例，使用 bookService.saveReadingProgress 方法");
-                    bookService.saveReadingProgress(currentBook, targetChapterId, targetChapterTitle, currentPageIndex);
-                }
+                // 使用工具类保存进度
+                ProgressSaveHelper.saveProgress(currentBook, targetChapterId, targetChapterTitle, currentPageIndex);
 
-                // 记录日志
                 LOG.info("[通知栏模式] 使用cachedChapters导航到章节的最后一页: " + targetChapterId);
 
                 // 触发章节预加载
                 triggerChapterPreload(currentBook, targetIndex);
 
-                // 设置事件源
+                // 设置事件源并发布章节变更事件
                 if (chapterChangeManager != null) {
                     chapterChangeManager.setEventSource(ChapterChangeEventSource.NOTIFICATION_SERVICE);
                 }
-                // 发布章节变更事件
                 ApplicationManager.getApplication().getMessageBus()
                         .syncPublisher(CurrentChapterNotifier.TOPIC)
                         .currentChapterChanged(currentBook, targetChapter);
@@ -1481,11 +1336,11 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
 
             // 获取新章节内容 - 使用单一响应式链，减少线程切换
             chapterService.getChapterContent(changedBook, newChapter.url())
-                .subscribeOn(reactiveSchedulers.io()) // 在IO线程执行耗时操作
+                .subscribeOn(Schedulers.io()) // 在IO线程执行耗时操作
                 .flatMap(content -> {
                     if (content == null || content.isEmpty()) {
                         LOG.warn("[事件处理] 获取到的新章节 '" + newChapter.title() + "' 内容为空，不更新通知。");
-                        return Mono.error(new IllegalStateException("章节内容为空"));
+                        return Single.error(new IllegalStateException("章节内容为空"));
                     }
 
                     // 异步获取章节标题
@@ -1497,10 +1352,10 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
                             }
                             return fetchedTitle;
                         })
-                        .onErrorReturn(newChapter.title()) // 如果获取标题时出错，也使用默认标题
+                        .onErrorReturnItem(newChapter.title()) // 如果获取标题时出错，也使用默认标题
                         .map(finalTitle -> new Object[]{content, finalTitle}); // 将内容和最终标题传递下去
                 })
-                .publishOn(reactiveSchedulers.ui()) // 确保UI更新在UI线程
+                .observeOn(Schedulers.io()) // 确保UI更新在UI线程
                 .subscribe(
                     data -> {
                         ApplicationManager.getApplication().invokeLater(() -> {
@@ -1573,6 +1428,40 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
     }
 
     // Placed before handleChapterChangedEvent for logical grouping.
+    /**
+     * 从数据库恢复保存的页码
+     *
+     * @param bookId 书籍ID
+     * @param chapterId 章节ID
+     * @param defaultPage 默认页码
+     * @return 恢复的页码，如果未找到则返回默认页码
+     */
+    private int restoreSavedPageNumber(String bookId, String chapterId, int defaultPage) {
+        try {
+            SqliteReadingProgressRepository readingProgressRepository = ApplicationManager.getApplication().getService(SqliteReadingProgressRepository.class);
+            if (readingProgressRepository != null) {
+                Optional<BookProgressData> progressDataOpt = readingProgressRepository.getProgress(bookId);
+                if (progressDataOpt.isPresent()) {
+                    BookProgressData progressData = progressDataOpt.get();
+                    if (chapterId.equals(progressData.lastReadChapterId())) {
+                        int savedPage = progressData.lastReadPage();
+                        LOG.debug("[页码调试] 从数据库恢复页码: {}", savedPage);
+                        return savedPage;
+                    } else {
+                        LOG.debug("[页码调试] 章节ID不匹配，无法恢复页码");
+                    }
+                } else {
+                    LOG.debug("[页码调试] 未找到书籍的阅读进度记录");
+                }
+            } else {
+                LOG.warn("[页码调试] 无法获取 SqliteReadingProgressRepository 实例");
+            }
+        } catch (Exception e) {
+            LOG.error("[页码调试] 恢复页码时出错", e);
+        }
+        return defaultPage;
+    }
+
     private void saveNotificationModeProgress() {
         if (!isReadingActive()) {
             LOG.warn("[进度保存] 无法保存通知栏模式进度：没有活动的阅读会话。");

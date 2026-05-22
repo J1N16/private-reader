@@ -48,7 +48,7 @@ public class RemoveBookAction extends AnAction implements DumbAware {
         }
 
         if (Messages.showYesNoDialog(readerPanel, "确定要删除选定的书籍 '" + selectedBook.getTitle() + "' 吗？\n此操作不可撤销。", "确认删除", Messages.getQuestionIcon()) == Messages.YES) {
-            BookService bookService = project.getService(BookService.class);
+            BookService bookService = ApplicationManager.getApplication().getService(BookService.class);
             if (bookService == null) {
                 ApplicationManager.getApplication().getService(NotificationService.class).showError("错误", "书籍服务不可用");
                 return;

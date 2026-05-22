@@ -7,6 +7,7 @@ import com.intellij.openapi.ui.Messages;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBTextField;
 import com.intellij.util.ui.JBUI;
+import com.lv.tool.privatereader.config.PrivateReaderConfig;
 import com.lv.tool.privatereader.exception.ExceptionHandler;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.parser.NovelParser;
@@ -111,46 +112,50 @@ public class AddBookDialog extends DialogWrapper {
             // 创建通知组
             com.intellij.notification.NotificationGroup notificationGroup =
                 com.intellij.notification.NotificationGroupManager.getInstance()
-                    .getNotificationGroup("Private Reader");
+                    .getNotificationGroup(PrivateReaderConfig.NOTIFICATION_GROUP_ID);
 
             // 执行异步操作
             bookService.addBook(book)
-                .publishOn(ReactiveSchedulers.getInstance().ui())
+                .subscribeOn(io.reactivex.rxjava3.schedulers.Schedulers.io())
                 .subscribe(
                     success -> {
-                        if (success) {
-                            LOG.info("成功添加书籍: " + book.getTitle());
+                        ApplicationManager.getApplication().invokeLater(() -> {
+                            if (success) {
+                                LOG.info("成功添加书籍: " + book.getTitle());
 
-                            // 显示成功通知
-                            notificationGroup.createNotification(
-                                "添加书籍成功",
-                                "成功添加书籍: " + book.getTitle(),
-                                com.intellij.notification.NotificationType.INFORMATION)
-                                .notify(project);
+                                // 显示成功通知
+                                notificationGroup.createNotification(
+                                    "添加书籍成功",
+                                    "成功添加书籍: " + book.getTitle(),
+                                    com.intellij.notification.NotificationType.INFORMATION)
+                                    .notify(project);
 
-                            // 通过事件总线通知刷新书架
-                            ApplicationManager.getApplication().getMessageBus()
-                                .syncPublisher(BookEvents.BookDataListener.BOOK_DATA_TOPIC).bookDataLoaded();
-                        } else {
-                            LOG.warn("添加书籍失败 (返回 false): " + book.getTitle());
+                                // 通过事件总线通知刷新书架
+                                ApplicationManager.getApplication().getMessageBus()
+                                    .syncPublisher(BookEvents.BookDataListener.BOOK_DATA_TOPIC).bookDataLoaded();
+                            } else {
+                                LOG.warn("添加书籍失败 (返回 false): " + book.getTitle());
 
-                            // 显示失败通知
-                            notificationGroup.createNotification(
-                                "添加书籍失败",
-                                "添加书籍失败，请检查URL或稍后再试。",
-                                com.intellij.notification.NotificationType.WARNING)
-                                .notify(project);
-                        }
+                                // 显示失败通知
+                                notificationGroup.createNotification(
+                                    "添加书籍失败",
+                                    "添加书籍失败，请检查URL或稍后再试。",
+                                    com.intellij.notification.NotificationType.WARNING)
+                                    .notify(project);
+                            }
+                        });
                     },
                     error -> {
-                        LOG.error("添加书籍时出错: " + book.getTitle(), error);
+                        ApplicationManager.getApplication().invokeLater(() -> {
+                            LOG.error("添加书籍时出错: " + book.getTitle(), error);
 
-                        // 显示错误通知
-                        notificationGroup.createNotification(
-                            "添加书籍错误",
-                            "添加书籍时发生错误: " + error.getMessage(),
-                            com.intellij.notification.NotificationType.ERROR)
-                            .notify(project);
+                            // 显示错误通知
+                            notificationGroup.createNotification(
+                                "添加书籍错误",
+                                "添加书籍时发生错误: " + error.getMessage(),
+                                com.intellij.notification.NotificationType.ERROR)
+                                .notify(project);
+                        });
                     }
                 );
         } catch (Exception e) {

@@ -5,7 +5,7 @@ import com.intellij.openapi.actionSystem.ActionUpdateThread;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.diagnostic.Logger;
-import com.lv.tool.privatereader.service.NotificationService;
+import com.lv.tool.privatereader.service.NotificationBarModeService;
 import com.lv.tool.privatereader.settings.ReaderModeSettings;
 import org.jetbrains.annotations.NotNull;
 
@@ -16,17 +16,16 @@ public class NextPageAction extends BaseAction {
     public void actionPerformed(@NotNull AnActionEvent e) {
         Project project = e.getProject();
         if (project != null) {
-            NotificationService notificationService = ApplicationManager.getApplication().getService(NotificationService.class);
+            NotificationBarModeService notificationBarModeService = ApplicationManager.getApplication().getService(NotificationBarModeService.class);
             ReaderModeSettings modeSettings = ApplicationManager.getApplication().getService(ReaderModeSettings.class);
 
-            if (notificationService != null && modeSettings != null && modeSettings.isNotificationMode()) {
-                LOG.info("[通知栏模式] 尝试显示下一页，当前页码: " + notificationService.getCurrentPage() + ", 总页数: " + notificationService.getTotalPages());
+            if (notificationBarModeService != null && modeSettings != null && modeSettings.isNotificationMode()) {
+                LOG.info("[通知栏模式] 尝试触发下一页");
                 try {
-                    // 使用同步方法，传递 project 参数
-                    notificationService.showNextPage(project);
-                    LOG.info("[通知栏模式] 成功显示下一页");
+                    notificationBarModeService.handleNextPageAction();
+                    LOG.info("[通知栏模式] 下一页触发完成");
                 } catch (Exception ex) {
-                    LOG.error("[通知栏模式] 调用 showNextPage 时发生异常: " + ex.getMessage(), ex);
+                    LOG.error("[通知栏模式] 触发下一页时发生异常: " + ex.getMessage(), ex);
                 }
             } else {
                 LOG.warn("Next Page action is not applicable to ReactiveReaderPanel (uses scrolling). Action performed but had no effect.");

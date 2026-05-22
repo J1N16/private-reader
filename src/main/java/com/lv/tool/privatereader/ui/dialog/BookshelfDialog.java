@@ -17,6 +17,7 @@ import com.intellij.ui.components.JBScrollPane;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.AsyncProcessIcon;
 import com.lv.tool.privatereader.async.ReactiveTaskManager;
+import com.lv.tool.privatereader.config.PrivateReaderConfig;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.parser.NovelParser;
 import com.lv.tool.privatereader.repository.BookRepository;
@@ -52,7 +53,6 @@ public class BookshelfDialog extends DialogWrapper {
     private JComboBox<String> sortComboBox;
     private AsyncProcessIcon loadingIcon;
     private JPanel loadingPanel;
-    private static final String NOTIFICATION_GROUP_ID = "Private Reader";
     private static final Logger LOG = Logger.getInstance(BookshelfDialog.class);
 
     public BookshelfDialog(Project project) {
@@ -219,19 +219,9 @@ public class BookshelfDialog extends DialogWrapper {
 
                 if (result == Messages.YES) {
                     try {
-                        // 任务管理器将取消预加载任务
                         ReactiveTaskManager taskManager = ReactiveTaskManager.getInstance();
                         taskManager.cancelTasksByPrefix("preload-chapters-" + selectedBook.getId());
-
-                        // 删除书籍
                         removeBook(selectedBook);
-                        // 刷新书架对话框
-                        refreshBookList();
-                        // 刷新阅读面板
-                        ReaderPanel panel = ReaderToolWindowFactory.findPanel(project);
-                        if (panel != null) {
-                            panel.loadBooks();
-                        }
                     } catch (Exception ex) {
                         LOG.error("移除书籍失败", ex);
                     }
@@ -290,7 +280,7 @@ public class BookshelfDialog extends DialogWrapper {
 
     private void showNotification(String content, NotificationType type) {
         Notification notification = NotificationGroupManager.getInstance()
-                .getNotificationGroup(NOTIFICATION_GROUP_ID)
+                .getNotificationGroup(PrivateReaderConfig.NOTIFICATION_GROUP_ID)
                 .createNotification(content, type)
                 .setImportant(false);
 
@@ -427,7 +417,26 @@ public class BookshelfDialog extends DialogWrapper {
 
     private void removeBook(Book book) {
         if (bookService != null) {
-            WriteAction.run(() -> bookService.removeBook(book));
+            bookService.removeBook(book)
+                .subscribe(
+                    success -> SwingUtilities.invokeLater(() -> {
+                        if (success) {
+                            refreshBookList();
+                            ReaderPanel panel = ReaderToolWindowFactory.findPanel(project);
+                            if (panel != null) {
+                                panel.loadBooks();
+                            }
+                            Messages.showInfoMessage(project, "已移除书籍《" + book.getTitle() + "》", "成功");
+                        } else {
+                            LOG.warn("移除书籍失败: " + book.getId());
+                            Messages.showWarningDialog(project, "无法移除书籍《" + book.getTitle() + "》", "移除失败");
+                        }
+                    }),
+                    error -> SwingUtilities.invokeLater(() -> {
+                        LOG.error("移除书籍失败: " + book.getId(), error);
+                        ApplicationManager.getApplication().getService(NotificationService.class).showError("错误", "移除书籍时出错: " + error.getMessage());
+                    })
+                );
         } else {
             LOG.error("BookService 未初始化，无法删除书籍");
         }
@@ -449,9 +458,11 @@ public class BookshelfDialog extends DialogWrapper {
             return new ArrayList<>();
         }
         try {
-            // return ReadAction.compute(() -> bookService.getAllBooks()); // Old sync call
             // Use ReadAction for potential file access, block for sync result needed by dialog
-            return ReadAction.compute(() -> bookService.getAllBooks().collectList().block(Duration.ofSeconds(10)));
+            return ReadAction.compute(() -> bookService.getAllBooks()
+                .toList()
+                .timeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                .blockingGet());
         } catch (Exception e) {
             LOG.error("加载书籍列表时出错", e);
             ApplicationManager.getApplication().getService(NotificationService.class).showError("错误", "加载书籍列表失败: " + e.getMessage());

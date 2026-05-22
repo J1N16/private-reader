@@ -120,7 +120,7 @@
     </ul>
   ]]></change-notes>
 
-  <idea-version since-build="241.0"/>
+  <idea-version since-build="243.0"/>
   <depends>com.intellij.modules.platform</depends>
 
   <extensions defaultExtensionNs="com.intellij">
@@ -133,19 +133,11 @@
     <!-- New Project Initialization Activity -->
     <postStartupActivity implementation="com.lv.tool.privatereader.initialization.ProjectInitializationActivity"/>
 
-    <!-- 添加源管理器服务 -->
-    <applicationService serviceInterface="com.lv.tool.privatereader.source.SourceManager"
-                   serviceImplementation="com.lv.tool.privatereader.source.impl.DefaultSourceManager"/>
-
     <!-- 只保留响应式预加载器 -->
     <applicationService serviceImplementation="com.lv.tool.privatereader.storage.cache.ReactiveChapterPreloader"/>
 
     <!-- Repository Module -->
     <applicationService serviceImplementation="com.lv.tool.privatereader.repository.RepositoryModule"/>
-
-    <!-- 依赖注入服务 -->
-    <applicationService serviceImplementation="com.lv.tool.privatereader.config.ServiceLocator"/>
-    <applicationService serviceImplementation="com.lv.tool.privatereader.config.ServiceModule"/>
 
     <!-- Repository implementations -->
     <applicationService serviceInterface="com.lv.tool.privatereader.repository.StorageRepository"
@@ -154,8 +146,8 @@
                    serviceImplementation="com.lv.tool.privatereader.repository.impl.FileBookRepository"/>
     <applicationService serviceInterface="com.lv.tool.privatereader.repository.ReadingProgressRepository"
                    serviceImplementation="com.lv.tool.privatereader.repository.impl.SqliteReadingProgressRepository"/>
-    <applicationService serviceInterface="com.lv.tool.privatereader.repository.ChapterCacheRepository"
-                   serviceImplementation="com.lv.tool.privatereader.storage.cache.ChapterCacheAdapter"/>
+    <applicationService serviceInterface="com.lv.tool.privatereader.repository.ReactiveChapterCacheRepository"
+                   serviceImplementation="com.lv.tool.privatereader.repository.impl.ReactiveFileChapterCacheRepository"/>
 
     <!-- Correct Service Registrations -->
     <applicationService serviceInterface="com.lv.tool.privatereader.service.BookService"
@@ -164,10 +156,6 @@
                         serviceImplementation="com.lv.tool.privatereader.service.impl.ChapterServiceImpl"/>
     <applicationService serviceInterface="com.lv.tool.privatereader.service.NotificationService"
                         serviceImplementation="com.lv.tool.privatereader.service.impl.NotificationServiceImpl"/>
-
-    <!-- 添加响应式章节缓存Repository -->
-    <applicationService serviceInterface="com.lv.tool.privatereader.repository.ReactiveChapterCacheRepository"
-                   serviceImplementation="com.lv.tool.privatereader.repository.impl.ReactiveFileChapterCacheRepository"/>
 
     <applicationService serviceImplementation="com.lv.tool.privatereader.config.PrivateReaderConfig"/>
 
@@ -228,14 +216,6 @@
     <!-- 添加通知栏模式服务 -->
     <applicationService serviceImplementation="com.lv.tool.privatereader.service.NotificationBarModeService"/>
   </extensions>
-
-  <!-- Add Project Listener Registration -->
-  <!-- 
-  <projectListeners>
-    <listener class="com.lv.tool.privatereader.listener.ProjectOpenListener"
-              topic="com.intellij.openapi.project.ProjectManagerListener"/>
-  </projectListeners>
-  -->
 
   <actions>
     <group id="PrivateReader.Group"

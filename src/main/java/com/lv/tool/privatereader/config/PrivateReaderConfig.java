@@ -1,5 +1,6 @@
 package com.lv.tool.privatereader.config;
 
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.Service;
 import com.lv.tool.privatereader.settings.CacheSettings;
 import com.lv.tool.privatereader.settings.NotificationReaderSettings;
@@ -13,6 +14,10 @@ import com.lv.tool.privatereader.settings.ReaderModeSettings;
  */
 @Service(Service.Level.APP)
 public final class PrivateReaderConfig {
+    // 通知组ID常量
+    public static final String NOTIFICATION_GROUP_ID = "Private Reader";
+    public static final String NOTIFICATION_GROUP_ID_READER = "PrivateReader";
+
     // 应用级别设置
     private final PluginSettings pluginSettings;
     private final ReaderSettings readerSettings;
@@ -21,12 +26,12 @@ public final class PrivateReaderConfig {
     private final ReaderModeSettings modeSettings;
     
     public PrivateReaderConfig() {
-        // 直接使用ServiceLocator静态方法获取应用级别服务
-        this.pluginSettings = ServiceLocator.getApplicationService(PluginSettings.class);
-        this.readerSettings = ServiceLocator.getApplicationService(ReaderSettings.class);
-        this.cacheSettings = ServiceLocator.getApplicationService(CacheSettings.class);
-        this.notificationSettings = ServiceLocator.getApplicationService(NotificationReaderSettings.class);
-        this.modeSettings = ServiceLocator.getApplicationService(ReaderModeSettings.class);
+        // 直接使用 ApplicationManager 获取应用级别服务
+        this.pluginSettings = ApplicationManager.getApplication().getService(PluginSettings.class);
+        this.readerSettings = ApplicationManager.getApplication().getService(ReaderSettings.class);
+        this.cacheSettings = ApplicationManager.getApplication().getService(CacheSettings.class);
+        this.notificationSettings = ApplicationManager.getApplication().getService(NotificationReaderSettings.class);
+        this.modeSettings = ApplicationManager.getApplication().getService(ReaderModeSettings.class);
     }
     
     /**
