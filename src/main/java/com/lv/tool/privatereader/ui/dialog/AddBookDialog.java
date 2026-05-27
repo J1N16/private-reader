@@ -3,7 +3,6 @@ package com.lv.tool.privatereader.ui.dialog;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.DialogWrapper;
-import com.intellij.openapi.ui.Messages;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBTextField;
 import com.intellij.util.ui.JBUI;
@@ -15,8 +14,6 @@ import com.lv.tool.privatereader.service.NotificationService;
 import com.lv.tool.privatereader.parser.ParserFactory;
 import com.lv.tool.privatereader.service.BookService;
 import org.jetbrains.annotations.Nullable;
-import com.lv.tool.privatereader.async.ReactiveSchedulers;
-import com.lv.tool.privatereader.ui.topics.BookshelfTopics;
 import com.intellij.openapi.application.ApplicationManager;
 import com.lv.tool.privatereader.events.BookEvents;
 

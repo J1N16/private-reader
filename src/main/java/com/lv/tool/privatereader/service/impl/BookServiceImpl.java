@@ -1,7 +1,6 @@
 package com.lv.tool.privatereader.service.impl;
 
 import com.intellij.openapi.application.ApplicationManager;
-import com.lv.tool.privatereader.async.ReactiveSchedulers;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.repository.BookRepository;
 import com.lv.tool.privatereader.repository.ReadingProgressRepository;

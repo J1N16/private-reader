@@ -3,7 +3,6 @@ package com.lv.tool.privatereader.service;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.parser.NovelParser.Chapter;
 import io.reactivex.rxjava3.core.Completable;
-import io.reactivex.rxjava3.core.Observable;
 import io.reactivex.rxjava3.core.Single;
 import org.jetbrains.annotations.NotNull;
 

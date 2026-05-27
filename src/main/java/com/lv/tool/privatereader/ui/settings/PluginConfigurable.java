@@ -4,7 +4,6 @@ import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.ui.components.JBCheckBox;
-import com.intellij.ui.components.JBLabel;
 import com.intellij.util.ui.FormBuilder;
 import com.lv.tool.privatereader.settings.PluginSettings;
 import com.lv.tool.privatereader.settings.PluginSettingsListener;

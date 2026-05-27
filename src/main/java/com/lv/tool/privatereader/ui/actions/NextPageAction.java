@@ -22,7 +22,7 @@ public class NextPageAction extends BaseAction {
             if (notificationBarModeService != null && modeSettings != null && modeSettings.isNotificationMode()) {
                 LOG.info("[通知栏模式] 尝试触发下一页");
                 try {
-                    notificationBarModeService.handleNextPageAction();
+                    notificationBarModeService.handleNextPageAction(project);
                     LOG.info("[通知栏模式] 下一页触发完成");
                 } catch (Exception ex) {
                     LOG.error("[通知栏模式] 触发下一页时发生异常: " + ex.getMessage(), ex);

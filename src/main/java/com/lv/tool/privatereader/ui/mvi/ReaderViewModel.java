@@ -4,7 +4,6 @@ import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
-import com.lv.tool.privatereader.async.ReactiveSchedulers;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.storage.cache.ReactiveChapterPreloader;
 import com.lv.tool.privatereader.parser.NovelParser;
@@ -22,7 +21,7 @@ import io.reactivex.rxjava3.subjects.PublishSubject;
 
 import java.util.Comparator;
 import java.util.List;
-import java.util.stream.Collectors;
+import java.util.function.BiConsumer;
 
 import io.reactivex.rxjava3.core.Single;
 
@@ -34,16 +33,41 @@ public class ReaderViewModel implements Disposable {
     private final ChapterService chapterService;
     private final ReactiveChapterPreloader chapterPreloader;
     private final NotificationService notificationService;
+    private final BiConsumer<Book, NovelParser.Chapter> chapterChangePublisher;
     private final CompositeDisposable disposables = new CompositeDisposable();
 
     private final PublishSubject<IReaderIntent> intentSubject = PublishSubject.create();
     private final BehaviorSubject<ReaderUiState> uiState = BehaviorSubject.createDefault(ReaderUiState.initial());
 
     public ReaderViewModel(Project project) {
-        this.bookService = ApplicationManager.getApplication().getService(BookService.class);
-        this.chapterService = ApplicationManager.getApplication().getService(ChapterService.class);
-        this.chapterPreloader = ApplicationManager.getApplication().getService(ReactiveChapterPreloader.class);
-        this.notificationService = ApplicationManager.getApplication().getService(NotificationService.class);
+        this(
+                ApplicationManager.getApplication().getService(BookService.class),
+                ApplicationManager.getApplication().getService(ChapterService.class),
+                ApplicationManager.getApplication().getService(ReactiveChapterPreloader.class),
+                ApplicationManager.getApplication().getService(NotificationService.class),
+                (book, chapter) -> ApplicationManager.getApplication().getMessageBus()
+                        .syncPublisher(CurrentChapterNotifier.TOPIC)
+                        .currentChapterChanged(book, chapter)
+        );
+    }
+
+    ReaderViewModel(BookService bookService,
+                    ChapterService chapterService,
+                    ReactiveChapterPreloader chapterPreloader,
+                    NotificationService notificationService) {
+        this(bookService, chapterService, chapterPreloader, notificationService, (book, chapter) -> {});
+    }
+
+    ReaderViewModel(BookService bookService,
+                    ChapterService chapterService,
+                    ReactiveChapterPreloader chapterPreloader,
+                    NotificationService notificationService,
+                    BiConsumer<Book, NovelParser.Chapter> chapterChangePublisher) {
+        this.bookService = bookService;
+        this.chapterService = chapterService;
+        this.chapterPreloader = chapterPreloader;
+        this.notificationService = notificationService;
+        this.chapterChangePublisher = chapterChangePublisher;
 
         disposables.add(
             intentSubject
@@ -94,13 +118,14 @@ public class ReaderViewModel implements Disposable {
             return;
         }
 
-        if (uiState.getValue().isLoadingContent()) {
+        ReaderUiState currentState = uiState.getValue();
+        if (currentState.isLoadingContent()) {
             LOG.warn("Already loading chapter content, ignoring new request for " + chapter.title());
             return;
         }
 
         uiState.onNext(
-                uiState.getValue().toBuilder()
+                currentState.toBuilder()
                         .selectedChapterId(chapter.url())
                         .isLoadingContent(true)
                         .build()
@@ -119,17 +144,10 @@ public class ReaderViewModel implements Disposable {
                                                     .currentChapterTitle(chapter.title())
                                                     .build()
                                     );
-                                    // Notify other parts of the application about the chapter change
-                                    ApplicationManager.getApplication().getMessageBus()
-                                            .syncPublisher(CurrentChapterNotifier.TOPIC)
-                                            .currentChapterChanged(book, chapter);
+                                    chapterChangePublisher.accept(book, chapter);
                                     LOG.debug("Published CurrentChapterNotifier event for: " + chapter.title());
 
-                                    // After successfully loading a chapter, trigger preloading for adjacent chapters.
-                                    // 减少预加载的频率或数量，以避免CPU过载
                                     preloadAdjacentChapters(book, chapter);
-
-                                    // Update progress to ensure timestamp is updated in DB (fixes notification bar mode loading old book)
                                     updateAndSaveProgress(book, chapter);
                                 },
                                 error -> {
@@ -146,24 +164,18 @@ public class ReaderViewModel implements Disposable {
     }
 
     private void updateAndSaveProgress(Book book, NovelParser.Chapter chapter) {
-        // Fetch latest book from DB to ensure we have the most up-to-date progress (especially lastReadPage)
-        // This prevents overwriting DB with stale data from UI state when switching modes
         disposables.add(
             bookService.getBookById(book.getId())
                 .flatMap(latestBook -> {
                     int position = 0;
                     int page = 1;
 
-                    // Check against the latest book state from DB
                     if (chapter.url().equals(latestBook.getLastReadChapterId())) {
                         position = latestBook.getLastReadPosition();
                         page = latestBook.getLastReadPageOrDefault(1);
                     }
 
-                    // Update the passed book object in memory (updates UI state reference)
                     book.updateReadingProgress(chapter.url(), position, page);
-                    
-                    // Update latestBook for saving
                     latestBook.updateReadingProgress(chapter.url(), position, page);
 
                     return bookService.saveReadingProgress(latestBook, chapter.url(), chapter.title(), position)
@@ -178,22 +190,24 @@ public class ReaderViewModel implements Disposable {
     }
 
     private NovelParser.Chapter findChapterInCurrentState(String chapterId) {
-        if (uiState.getValue().getChapters() == null || chapterId == null) return null;
-        return uiState.getValue().getChapters().stream()
+        ReaderUiState currentState = uiState.getValue();
+        List<NovelParser.Chapter> chapters = currentState.getChapters();
+        if (chapters == null || chapterId == null) return null;
+        return chapters.stream()
             .filter(c -> c.url().equals(chapterId))
             .findFirst()
             .orElse(null);
     }
 
     private void loadChaptersForBook(String bookId, String chapterIdToRestore) {
-        // First update the state to show this book is selected
+        ReaderUiState currentState = uiState.getValue();
         uiState.onNext(
-            uiState.getValue().toBuilder()
+            currentState.toBuilder()
                 .selectedBookId(bookId)
                 .isLoadingChapters(true)
                 .build()
         );
-        
+
         Book book = findBookInCurrentState(bookId);
         if (book == null) {
             uiState.onNext(uiState.getValue().toBuilder().error("Selected book not found in state").isLoadingChapters(false).build());
@@ -201,15 +215,14 @@ public class ReaderViewModel implements Disposable {
         }
 
         disposables.add(
-            bookService.getBookById(bookId) // Fetch the latest book state
+            bookService.getBookById(bookId)
                 .flatMap(latestBook -> chapterService.getChapterList(latestBook)
-                        .map(chapters -> new java.util.AbstractMap.SimpleEntry<>(latestBook, chapters))) // Pair the latest book with its chapters
+                        .map(chapters -> new java.util.AbstractMap.SimpleEntry<>(latestBook, chapters)))
                 .subscribeOn(Schedulers.io())
                 .subscribe(
                     pair -> {
                         Book latestBook = pair.getKey();
                         List<NovelParser.Chapter> chapters = pair.getValue();
-                        // Determine which chapter to select after loading. Prioritize the explicitly passed one.
                         String chapterIdToSelect = chapterIdToRestore != null ? chapterIdToRestore : latestBook.getLastReadChapterId();
 
                         uiState.onNext(
@@ -220,13 +233,11 @@ public class ReaderViewModel implements Disposable {
                         );
 
                         if (chapterIdToSelect != null && !chapterIdToSelect.isEmpty()) {
-                            // Find the chapter object from the newly loaded list
                             chapters.stream()
                                 .filter(c -> c.url().equals(chapterIdToSelect))
                                 .findFirst()
                                 .ifPresent(chapterToLoad -> loadChapterContent(latestBook, chapterToLoad));
                         } else if (!chapters.isEmpty()) {
-                            // If no last-read chapter is found, load the first chapter by default
                             loadChapterContent(latestBook, chapters.get(0));
                         }
                     },
@@ -270,7 +281,7 @@ public class ReaderViewModel implements Disposable {
                                     String selectedBookId = books.isEmpty() ? null : books.get(0).getId();
                                     updateInitialState(books, selectedBookId);
                                 },
-                                () -> { // Empty Maybe
+                                () -> {
                                     books.sort(Comparator.comparingLong(Book::getCreateTimeMillis).reversed());
                                     String selectedBookId = books.isEmpty() ? null : books.get(0).getId();
                                     updateInitialState(books, selectedBookId);
@@ -329,12 +340,11 @@ public class ReaderViewModel implements Disposable {
     private void refreshChapters() {
         ReaderUiState currentState = uiState.getValue();
         String bookId = currentState.getSelectedBookId();
-        String chapterId = currentState.getSelectedChapterId(); // Get current chapter before refresh
+        String chapterId = currentState.getSelectedChapterId();
         if (bookId == null) {
             LOG.warn("Cannot refresh chapters, no book selected");
             return;
         }
-        // Pass the current chapter ID to be restored after the list is reloaded
         loadChaptersForBook(bookId, chapterId);
     }
 
@@ -349,7 +359,7 @@ public class ReaderViewModel implements Disposable {
                             .toObservable()
                             .subscribe(success -> {
                                 if (success) {
-                                    loadInitialData(); // Just reload everything for simplicity
+                                    loadInitialData();
                                 } else {
                                     notificationService.showError("添加书籍失败", "无法添加书籍，请稍后再试。");
                                     uiState.onNext(uiState.getValue().toBuilder().isLoadingBooks(false).build());
@@ -395,13 +405,13 @@ public class ReaderViewModel implements Disposable {
                 .toObservable()
                 .subscribe(success -> {
                     if(success) {
-                        loadInitialData(); // Just reload everything
+                        loadInitialData();
                     } else {
                         notificationService.showError("删除书籍失败", "无法删除书籍，请稍后再试。");
                         uiState.onNext(uiState.getValue().toBuilder().isLoadingBooks(false).build());
                     }
                 }, error -> {
-                    LOG.error("Failed to delete book", error);
+                    LOG.warn("Failed to delete book", error);
                     notificationService.showError("删除书籍失败", error.getMessage());
                     uiState.onNext(uiState.getValue().toBuilder().isLoadingBooks(false).build());
                 })
@@ -412,8 +422,6 @@ public class ReaderViewModel implements Disposable {
         String bookId = uiState.getValue().getSelectedBookId();
         if (bookId == null) return;
 
-        // Fetch the latest book state from the service to ensure we have the correct lastReadPage
-        // The book in uiState might be stale (from getAllBooks) and have default page 1
         disposables.add(
             bookService.getBookById(bookId)
                 .flatMap(book -> bookService.saveReadingProgress(book, chapterId, "", position)
@@ -433,21 +441,19 @@ public class ReaderViewModel implements Disposable {
        }
        LOG.debug("Handling external chapter change for book: " + book.getTitle() + ", chapter: " + chapter.title());
 
-       // First, ensure we have the latest chapter list for the book.
        disposables.add(
            chapterService.getChapterList(book)
                .toObservable()
                .subscribeOn(Schedulers.io())
                .subscribe(
                    chapters -> {
-                       // With the latest chapter list, we can now safely update the state and load the content.
+                       ReaderUiState currentState = uiState.getValue();
                        uiState.onNext(
-                           uiState.getValue().toBuilder()
+                           currentState.toBuilder()
                                .selectedBookId(book.getId())
-                               .chapters(chapters) // Update the chapter list in the state
+                               .chapters(chapters)
                                .build()
                        );
-                       // Now, trigger the content load for the specific chapter.
                        loadChapterContent(book, chapter);
                    },
                    error -> {
@@ -482,16 +488,11 @@ public class ReaderViewModel implements Disposable {
 
        if (currentIndex != -1) {
            final int indexToPreload = currentIndex;
-           // The preloader runs asynchronously, so we just subscribe to it.
-           // It's a service, so its lifecycle is managed by the application.
-           // 优化：使用 subscribeOn(Schedulers.single()) 避免占用过多IO线程
-           // 并且可以考虑限制预加载的数量，比如只预加载下一章
-           // 使用 Completable.toObservable() 转换以兼容 subscribe
            chapterPreloader.preloadChaptersReactive(book, indexToPreload)
                .toObservable()
                .subscribeOn(Schedulers.single())
                .subscribe(
-                   v -> { /* onNext is not called for Mono<Void>, do nothing */ },
+                   v -> {},
                    error -> LOG.error("Error initiating chapter preloading", error),
                    () -> LOG.debug("Preloading initiated for chapters around index: " + indexToPreload)
                );

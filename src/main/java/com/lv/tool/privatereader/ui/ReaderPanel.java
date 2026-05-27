@@ -14,9 +14,7 @@ import com.lv.tool.privatereader.settings.ReaderSettings;
 import com.lv.tool.privatereader.settings.ReaderSettingsListener;
 import com.lv.tool.privatereader.settings.CacheSettings;
 import com.lv.tool.privatereader.settings.CacheSettingsListener;
-import com.lv.tool.privatereader.settings.ReaderModeSettings;
 import com.intellij.openapi.application.ApplicationManager;
-import com.lv.tool.privatereader.async.ReactiveSchedulers;
 import com.intellij.openapi.ui.Messages;
 import com.lv.tool.privatereader.events.ChapterChangeManager;
 import com.lv.tool.privatereader.events.ChapterChangeEventSource;
@@ -35,15 +33,10 @@ import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.awt.event.AdjustmentEvent;
 import java.awt.event.AdjustmentListener;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
-import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.Timer;
-import java.util.UUID;
-import java.util.Objects;
 
 /**
  * 阅读器面板

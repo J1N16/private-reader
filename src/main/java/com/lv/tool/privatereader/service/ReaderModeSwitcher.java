@@ -133,6 +133,7 @@ public final class ReaderModeSwitcher implements ReaderModeSettingsListener, Dis
                  NotificationBarModeService notificationBarModeService = ApplicationManager.getApplication().getService(NotificationBarModeService.class);
                  if (notificationBarModeService != null) {
                      LOG.info("Initializing NotificationBarModeService for project: " + project.getName());
+                     notificationBarModeService.setProject(project);
                      // 调用初始化方法，恢复上次的阅读位置
                      notificationBarModeService.initializeNotificationBarModeSettings();
                  } else {
@@ -200,6 +201,9 @@ public final class ReaderModeSwitcher implements ReaderModeSettingsListener, Dis
         if (isNotificationMode) {
             try {
                 NotificationBarModeService notificationBarModeService = ApplicationManager.getApplication().getService(NotificationBarModeService.class);
+                if (notificationBarModeService != null) {
+                    notificationBarModeService.setProject(project);
+                }
                 LOG.info("[页码调试] NotificationBarModeService 实例: " + (notificationBarModeService != null ? "已获取" : "获取失败"));
             } catch (Exception e) {
                 LOG.error("[页码调试] 获取 NotificationBarModeService 实例时出错", e);

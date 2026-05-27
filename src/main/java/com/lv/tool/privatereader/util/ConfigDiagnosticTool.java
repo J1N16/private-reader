@@ -5,9 +5,7 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.lv.tool.privatereader.service.NotificationService;
 import com.lv.tool.privatereader.service.ReaderModeSwitcher;
 import com.lv.tool.privatereader.settings.*;
-import com.lv.tool.privatereader.storage.SettingsStorage;
 
-import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;

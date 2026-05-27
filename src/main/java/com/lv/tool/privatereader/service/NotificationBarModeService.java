@@ -15,6 +15,7 @@ import com.intellij.openapi.project.ProjectManager;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import com.intellij.openapi.application.ModalityState;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.Optional;
 
@@ -39,7 +40,7 @@ public class NotificationBarModeService implements Disposable, NotificationReade
     private final BookService bookService;
     private final ReadingProgressRepository readingProgressRepository;
     private final NotificationReaderSettings notificationReaderSettings;
-    private Project project; // Made non-final to allow initialization in constructor body
+    private Project project;
 
     private String currentBookId;
     private String currentChapterId;
@@ -63,21 +64,18 @@ public class NotificationBarModeService implements Disposable, NotificationReade
         this.readingProgressRepository = ApplicationManager.getApplication().getService(ReadingProgressRepository.class);
         this.notificationReaderSettings = ApplicationManager.getApplication().getService(NotificationReaderSettings.class);
 
-        Project[] openProjects = ProjectManager.getInstance().getOpenProjects();
-        if (openProjects.length > 0) {
-            this.project = openProjects[0];
-            LOG.info("使用第一个打开的项目: " + this.project.getName());
-        } else {
-            this.project = null;
-            LOG.warn("没有打开的项目，NotificationBarModeService 可能无法在构造时确定默认项目");
-        }
-
-        // Subscribe to settings changes
-        ApplicationManager.getApplication().getMessageBus().connect(this) // 'this' as Disposable
+        ApplicationManager.getApplication().getMessageBus().connect(this)
             .subscribe(NotificationReaderSettingsListener.TOPIC, this);
         LOG.info("NotificationBarModeService subscribed to NotificationReaderSettingsListener.");
 
         LOG.info("NotificationBarModeService 初始化完成");
+    }
+
+    public void setProject(@NotNull Project project) {
+        if (project.isDisposed()) {
+            return;
+        }
+        this.project = project;
     }
 
     /**
@@ -87,6 +85,16 @@ public class NotificationBarModeService implements Disposable, NotificationReade
      * @param pageNumber The page number to start reading from.
      */
     public void activateNotificationBarMode(String bookId, String chapterId, int pageNumber) {
+        Project currentProject = resolveProject();
+        if (currentProject == null) {
+            LOG.error("无法激活通知栏模式：没有打开的项目");
+            return;
+        }
+        activateNotificationBarMode(currentProject, bookId, chapterId, pageNumber);
+    }
+
+    public void activateNotificationBarMode(@NotNull Project project, String bookId, String chapterId, int pageNumber) {
+        setProject(project);
         // 1. Update ReaderModeSettings to notification bar mode
         readerModeSettings.setCurrentMode(ReaderModeSettings.Mode.NOTIFICATION_BAR);
 
@@ -94,14 +102,7 @@ public class NotificationBarModeService implements Disposable, NotificationReade
         this.currentChapterId = chapterId;
         this.currentPageNumber = pageNumber;
 
-        // 获取当前打开的项目
-        Project currentProject = this.project;
-        if (currentProject == null) {
-            Project[] openProjects = ProjectManager.getInstance().getOpenProjects();
-            if (openProjects.length > 0) {
-                currentProject = openProjects[0];
-            }
-        }
+        Project currentProject = resolveProject();
 
         if (currentProject == null) {
             LOG.error("无法激活通知栏模式：没有打开的项目");
@@ -158,6 +159,22 @@ public class NotificationBarModeService implements Disposable, NotificationReade
         });
     }
 
+    private Project resolveProject() {
+        if (project != null && !project.isDisposed()) {
+            return project;
+        }
+
+        Project[] openProjects = ProjectManager.getInstance().getOpenProjects();
+        for (Project openProject : openProjects) {
+            if (!openProject.isDisposed()) {
+                project = openProject;
+                return openProject;
+            }
+        }
+        project = null;
+        return null;
+    }
+
     /**
      * Deactivates the notification bar reading mode.
      */
@@ -186,6 +203,11 @@ public class NotificationBarModeService implements Disposable, NotificationReade
         saveCurrentReadingProgressAsync();
     }
 
+    public void handleNextPageAction(@NotNull Project project) {
+        setProject(project);
+        handleNextPageAction();
+    }
+
     /**
      * Handles the previous page action triggered from the notification.
      */
@@ -198,15 +220,16 @@ public class NotificationBarModeService implements Disposable, NotificationReade
         saveCurrentReadingProgressAsync();
     }
 
+    public void handlePrevPageAction(@NotNull Project project) {
+        setProject(project);
+        handlePrevPageAction();
+    }
+
     private boolean ensureReadingReadyForPageAction(int pageDelta) {
-        if (project == null) {
-            Project[] openProjects = ProjectManager.getInstance().getOpenProjects();
-            if (openProjects.length > 0) {
-                project = openProjects[0];
-            } else {
-                LOG.warn("无法执行通知栏翻页：没有打开的项目");
-                return false;
-            }
+        Project currentProject = resolveProject();
+        if (currentProject == null) {
+            LOG.warn("无法执行通知栏翻页：没有打开的项目");
+            return false;
         }
 
         String activeBookId = notificationService.getCurrentBookId();
@@ -234,8 +257,13 @@ public class NotificationBarModeService implements Disposable, NotificationReade
      * Handles the next chapter action triggered from the notification.
      */
     public void handleNextChapterAction() {
+        Project currentProject = resolveProject();
+        if (currentProject == null) {
+            LOG.warn("无法执行通知栏章节导航：没有打开的项目");
+            return;
+        }
         // 1. Call NotificationService's navigate chapter method
-        notificationService.navigateChapter(project, 1); // 1 means next chapter
+        notificationService.navigateChapter(currentProject, 1); // 1 means next chapter
 
         // 2. Save current reading progress (start page of the new chapter)
         this.currentBookId = notificationService.getCurrentBookId();
@@ -244,18 +272,33 @@ public class NotificationBarModeService implements Disposable, NotificationReade
         saveCurrentReadingProgressAsync();
     }
 
+    public void handleNextChapterAction(@NotNull Project project) {
+        setProject(project);
+        handleNextChapterAction();
+    }
+
     /**
      * Handles the previous chapter action triggered from the notification.
      */
     public void handlePrevChapterAction() {
+        Project currentProject = resolveProject();
+        if (currentProject == null) {
+            LOG.warn("无法执行通知栏章节导航：没有打开的项目");
+            return;
+        }
         // 1. Call NotificationService's navigate chapter method
-        notificationService.navigateChapter(project, -1); // -1 means previous chapter
+        notificationService.navigateChapter(currentProject, -1); // -1 means previous chapter
 
         // 2. Save current reading progress (start page of the new chapter)
         this.currentBookId = notificationService.getCurrentBookId();
         this.currentChapterId = notificationService.getCurrentChapterId();
         this.currentPageNumber = notificationService.getCurrentPage();
         saveCurrentReadingProgressAsync();
+    }
+
+    public void handlePrevChapterAction(@NotNull Project project) {
+        setProject(project);
+        handlePrevChapterAction();
     }
 
     /**
@@ -336,17 +379,10 @@ public class NotificationBarModeService implements Disposable, NotificationReade
     }
 
     private void refreshNotificationDisplay() {
-        if (project == null) {
-            LOG.warn("Cannot refresh notification display: project is null at the beginning of refreshNotificationDisplay.");
-            // Attempt to re-acquire project context if it was lost (e.g. original project closed)
-            Project[] openProjects = ProjectManager.getInstance().getOpenProjects();
-            if (openProjects.length > 0) {
-                this.project = openProjects[0]; // Use the first available open project
-                LOG.info("Re-acquired project context for refresh: " + this.project.getName());
-            } else {
-                LOG.error("No open projects found. Cannot refresh notification display.");
-                return;
-            }
+        Project currentProject = resolveProject();
+        if (currentProject == null) {
+            LOG.warn("Cannot refresh notification display: no open project.");
+            return;
         }
 
         if (currentBookId == null || currentChapterId == null) {
@@ -382,7 +418,7 @@ public class NotificationBarModeService implements Disposable, NotificationReade
                             }
 
                             ApplicationManager.getApplication().invokeLater(()-> {
-                                notificationService.showChapterContent(project, currentBookId, currentChapterId, currentPageNumber, chapterTitle, chapterContent);
+                                notificationService.showChapterContent(currentProject, currentBookId, currentChapterId, currentPageNumber, chapterTitle, chapterContent);
                             }, ModalityState.defaultModalityState());
                         },
                         error -> {

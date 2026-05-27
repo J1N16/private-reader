@@ -488,9 +488,17 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
     }
     
     private boolean isReadingActive() {
+        return isReadingActive(true);
+    }
+
+    private boolean isReadingActive(boolean notifyWhenInactive) {
         if (currentBook == null || currentChapterId == null || currentChapterTitle == null) {
-            LOG.warn("[通知栏模式] 当前没有正在阅读的内容");
-            showInfo("导航", "当前没有正在阅读的内容");
+            if (notifyWhenInactive) {
+                LOG.warn("[通知栏模式] 当前没有正在阅读的内容");
+                showInfo("导航", "当前没有正在阅读的内容");
+            } else {
+                LOG.debug("[通知栏模式] 当前没有正在阅读的内容");
+            }
             return false;
         }
         return true;
@@ -878,19 +886,18 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
         // Temporarily removing chapterPreloader dispose due to linter error. Will investigate its lifecycle later.
 
         // 尝试保存通知模式的阅读进度
-        ReaderModeSettings currentReaderModeSettings = null;
+        ReaderModeSettings currentReaderModeSettings;
         try {
-            currentReaderModeSettings = ApplicationManager.getApplication().getService(ReaderModeSettings.class);
+            currentReaderModeSettings = ApplicationManager.getApplication().getServiceIfCreated(ReaderModeSettings.class);
         } catch (Exception e) {
-            LOG.error("Failed to get ReaderModeSettings service in dispose", e);
-            // 如果无法获取服务，则不执行后续操作
+            LOG.warn("Failed to get existing ReaderModeSettings service in dispose", e);
             return;
         }
 
         if (currentReaderModeSettings != null && currentReaderModeSettings.isNotificationMode()) {
-            LOG.info("[Dispose] Current NotificationServiceImpl state: currentPageIndex = " + this.currentPageIndex + ", currentPages.size() = " + (this.currentPages != null ? this.currentPages.size() : "null")); // ADDED LOG
+            LOG.info("[Dispose] Current NotificationServiceImpl state: currentPageIndex = " + this.currentPageIndex + ", currentPages.size() = " + (this.currentPages != null ? this.currentPages.size() : "null"));
             LOG.info("Currently in notification mode, attempting to save progress before disposing.");
-            saveNotificationModeProgress();
+            saveNotificationModeProgress(false, false);
         } else {
             LOG.info("Not in notification mode or ReaderModeSettings is null, no progress to save from notification bar.");
         }
@@ -1463,20 +1470,30 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
     }
 
     private void saveNotificationModeProgress() {
-        if (!isReadingActive()) {
-            LOG.warn("[进度保存] 无法保存通知栏模式进度：没有活动的阅读会话。");
+        saveNotificationModeProgress(true, true);
+    }
+
+    private void saveNotificationModeProgress(boolean notifyWhenInactive, boolean createRepositoryIfNeeded) {
+        if (!isReadingActive(notifyWhenInactive)) {
+            if (notifyWhenInactive) {
+                LOG.warn("[进度保存] 无法保存通知栏模式进度：没有活动的阅读会话。");
+            } else {
+                LOG.debug("[进度保存] 无法保存通知栏模式进度：没有活动的阅读会话。");
+            }
             return;
         }
-        
+
         try {
-            SqliteReadingProgressRepository repository = ApplicationManager.getApplication().getService(SqliteReadingProgressRepository.class);
+            SqliteReadingProgressRepository repository = createRepositoryIfNeeded
+                    ? ApplicationManager.getApplication().getService(SqliteReadingProgressRepository.class)
+                    : ApplicationManager.getApplication().getServiceIfCreated(SqliteReadingProgressRepository.class);
             if (repository != null) {
                 int pageToSave = currentPageIndex + 1;
                 repository.updateProgress(currentBook, currentChapterId, currentChapterTitle, 0, pageToSave);
                 LOG.info(String.format("[进度保存] 成功保存通知栏模式阅读进度：书籍='%s', 章节='%s', 页码=%d",
                         currentBook.getTitle(), currentChapterTitle, pageToSave));
             } else {
-                LOG.error("[进度保存] SqliteReadingProgressRepository 服务未找到，无法保存进度。");
+                LOG.warn("[进度保存] SqliteReadingProgressRepository 服务未初始化，跳过保存进度。");
             }
         } catch (Exception e) {
             LOG.error("[进度保存] 保存通知栏模式阅读进度时发生意外错误。", e);

@@ -5,24 +5,19 @@ import com.google.common.cache.CacheBuilder;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import com.google.gson.JsonPrimitive;
 import com.google.gson.TypeAdapter;
 import com.google.gson.reflect.TypeToken;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
-import com.intellij.openapi.application.Application;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.project.Project;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.model.BookIndex;
 import com.lv.tool.privatereader.repository.BookRepository;
 import com.lv.tool.privatereader.repository.StorageRepository;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import java.util.stream.Collectors;
 
 import java.io.File;
 import java.io.FileReader;
@@ -32,12 +27,10 @@ import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
-import java.nio.file.attribute.BasicFileAttributes;
 import com.lv.tool.privatereader.service.ChapterService;
 import com.intellij.openapi.components.Service;
 
@@ -98,6 +91,12 @@ public final class FileBookRepository implements BookRepository {
                 LOG.error("自动修复过程中出错: " + e.getMessage(), e);
             }
         });
+    }
+
+    FileBookRepository(StorageRepository storageRepository) {
+        this.storageRepository = storageRepository;
+        this.gson = createSecureGson();
+        chapterFetchRetryCount.clear();
     }
 
     // 共享的排除策略实例，用于序列化和反序列化
@@ -197,21 +196,6 @@ public final class FileBookRepository implements BookRepository {
     @NotNull
     public List<Book> getAllBooks(boolean loadDetails) {
         List<Book> books = new ArrayList<>();
-
-        // 添加标志位，防止递归调用
-        boolean isRepairInProgress = Thread.currentThread().getStackTrace().length > 60;
-
-        // 尝试清理和修复损坏的书籍文件
-        try {
-            // 先清理损坏的文件
-            cleanupCorruptedBooks();
-            // 然后修复阅读位置，但防止递归调用
-            if (!isRepairInProgress) {
-                repairMissingReadingContent();
-            }
-        } catch (Exception e) {
-            LOG.warn("书籍维护过程中出错: " + e.getMessage(), e);
-        }
 
         try {
             // 读取所有书籍索引

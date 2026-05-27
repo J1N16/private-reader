@@ -1,6 +1,5 @@
 package com.lv.tool.privatereader.repository.impl;
 
-import com.intellij.openapi.application.Application;
 import com.intellij.openapi.diagnostic.Logger;
 import com.lv.tool.privatereader.repository.StorageRepository;
 import org.jetbrains.annotations.NotNull;

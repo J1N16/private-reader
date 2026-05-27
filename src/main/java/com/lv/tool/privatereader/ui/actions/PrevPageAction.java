@@ -22,7 +22,7 @@ public class PrevPageAction extends BaseAction {
             if (notificationBarModeService != null && modeSettings != null && modeSettings.isNotificationMode()) {
                 LOG.info("[通知栏模式] 尝试触发上一页");
                 try {
-                    notificationBarModeService.handlePrevPageAction();
+                    notificationBarModeService.handlePrevPageAction(project);
                     LOG.info("[通知栏模式] 上一页触发完成");
                 } catch (Exception ex) {
                     LOG.error("[通知栏模式] 触发上一页时发生异常: " + ex.getMessage(), ex);

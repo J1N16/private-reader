@@ -1,17 +1,13 @@
 package com.lv.tool.privatereader.model;
 
-import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
-import java.time.temporal.ChronoUnit;
 import com.lv.tool.privatereader.parser.NovelParser.Chapter;
 import com.intellij.openapi.project.Project;
 import com.lv.tool.privatereader.parser.NovelParser;
 import com.intellij.util.xmlb.annotations.Tag;
 import com.intellij.util.xmlb.annotations.Transient;
 import com.intellij.util.xmlb.annotations.XCollection;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 import com.lv.tool.privatereader.parser.ParserFactory;
 import com.google.gson.annotations.Expose;
 import java.util.Map;

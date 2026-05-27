@@ -2,7 +2,6 @@ package com.lv.tool.privatereader.ui.actions;
 
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
-import com.intellij.openapi.actionSystem.Presentation;
 import com.intellij.openapi.actionSystem.ActionUpdateThread;
 import com.intellij.openapi.project.Project;
 import com.lv.tool.privatereader.settings.PluginSettings;

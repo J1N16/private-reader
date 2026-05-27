@@ -2,8 +2,6 @@ package com.lv.tool.privatereader.settings;
 
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
-import org.jetbrains.annotations.NotNull;
-import java.awt.Color;
 import java.awt.Font;
 import javax.swing.UIManager;
 import java.util.ArrayList;

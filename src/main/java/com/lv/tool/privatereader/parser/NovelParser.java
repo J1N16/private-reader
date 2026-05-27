@@ -1,18 +1,14 @@
 package com.lv.tool.privatereader.parser;
 
-import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.project.Project;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.repository.ChapterCacheRepository;
 import com.lv.tool.privatereader.repository.RepositoryModule;
 import com.intellij.util.xmlb.annotations.Tag;
-import org.jetbrains.annotations.NotNull;
 import com.google.gson.annotations.Expose;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
-import java.util.Objects;
 
 /**
  * 小说解析器接口

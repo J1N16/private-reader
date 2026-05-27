@@ -2,8 +2,6 @@ package com.lv.tool.privatereader.repository.impl;
 
 import com.intellij.openapi.application.Application;
 import com.intellij.openapi.diagnostic.Logger;
-import com.lv.tool.privatereader.repository.ReactiveChapterCacheRepository;
-import com.lv.tool.privatereader.settings.CacheSettings;
 
 /**
  * 响应式文件章节缓存仓库

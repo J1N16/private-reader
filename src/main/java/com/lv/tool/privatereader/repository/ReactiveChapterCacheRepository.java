@@ -2,7 +2,6 @@ package com.lv.tool.privatereader.repository;
 
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Maybe;
-import io.reactivex.rxjava3.core.Single;
 import org.jetbrains.annotations.NotNull;
 
 /**

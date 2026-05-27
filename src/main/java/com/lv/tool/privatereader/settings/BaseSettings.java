@@ -2,18 +2,10 @@ package com.lv.tool.privatereader.settings;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.lv.tool.privatereader.storage.SettingsStorage;
-import com.lv.tool.privatereader.storage.StorageManager;
 import org.jetbrains.annotations.NotNull;
-import com.intellij.util.messages.MessageBus;
 
-import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.lang.reflect.Type;
 
 /**
  * 基础设置类

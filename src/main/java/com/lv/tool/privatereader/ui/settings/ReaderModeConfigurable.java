@@ -7,7 +7,6 @@ import com.intellij.ui.components.JBCheckBox;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.util.ui.FormBuilder;
 import com.lv.tool.privatereader.settings.ReaderModeSettings;
-import com.lv.tool.privatereader.settings.ReaderModeSettingsListener;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.Nullable;
 

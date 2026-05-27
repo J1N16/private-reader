@@ -9,7 +9,6 @@ import com.intellij.util.ui.JBUI;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.parser.NovelParser;
 import com.lv.tool.privatereader.service.ChapterService;
-import com.lv.tool.privatereader.async.ReactiveSchedulers;
 import com.lv.tool.privatereader.service.NotificationService;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
@@ -18,7 +17,6 @@ import com.intellij.openapi.ui.Messages;
 import com.lv.tool.privatereader.messaging.CurrentChapterNotifier;
 import com.intellij.util.messages.MessageBusConnection;
 import javax.swing.SwingUtilities;
-import javax.swing.DefaultListModel;
 import javax.swing.ListModel;
 
 import javax.swing.*;

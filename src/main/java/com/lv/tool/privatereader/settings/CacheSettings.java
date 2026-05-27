@@ -3,10 +3,8 @@ package com.lv.tool.privatereader.settings;
 import com.intellij.openapi.application.PathManager;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.project.ProjectManager;
 import org.jetbrains.annotations.NotNull;
 
-import java.nio.file.Path;
 
 /**
  * 缓存设置

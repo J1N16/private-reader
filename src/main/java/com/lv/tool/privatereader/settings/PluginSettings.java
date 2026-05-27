@@ -2,7 +2,6 @@ package com.lv.tool.privatereader.settings;
 
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
-import org.jetbrains.annotations.NotNull;
 
 /**
  * 插件设置
