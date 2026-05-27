@@ -1,5 +1,22 @@
 # Changelog 更新日志
 
+## [2.5.0] - 2026-05-27
+
+### 架构优化 | Architecture Improvements
+- 统一响应式阅读链路，清理旧的同步实现和重复任务管理逻辑 | Unified the reactive reading pipeline and removed legacy synchronous implementations and duplicate task management logic
+- 简化服务注册与依赖结构，移除 Guice、ServiceLocator、旧存储适配器、旧缓存管理器和未使用的诊断/来源模块 | Simplified service registration and dependency structure by removing Guice, ServiceLocator, legacy storage adapters, legacy cache managers, and unused diagnostic/source modules
+- 优化仓储与缓存实现，统一书籍、章节缓存和阅读进度的数据访问路径 | Improved repository and cache implementations with unified access paths for books, chapter cache, and reading progress
+
+### 修复 | Fixes
+- 修复通知栏模式销毁阶段初始化新服务导致的插件责任异常 | Fixed plugin-blame errors caused by service initialization during notification mode disposal
+- 修复书架删除、通知栏触发、阅读面板切书同步和章节变更事件处理问题 | Fixed bookshelf deletion, notification mode triggering, reader panel book switching synchronization, and chapter change event handling issues
+- 修复上一页/下一页操作在不同阅读状态下的行为一致性 | Fixed previous/next page action consistency across reader states
+
+### 质量与维护 | Quality and Maintenance
+- 清理大量无用导入和冗余代码，降低维护成本 | Cleaned unused imports and redundant code to reduce maintenance overhead
+- 补充书籍仓储、章节事件、阅读 ViewModel 和书籍服务相关回归测试 | Added regression tests for book repository, chapter events, reader ViewModel, and book service
+- 更新优化方案文档、构建配置和插件变更说明 | Updated optimization documents, build configuration, and plugin change notes
+
 ## [2.4.1] - 2026-01-23
 
 ### 功能优化 | Feature Improvements

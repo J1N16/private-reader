@@ -4,7 +4,7 @@ plugins {
 }
 
 group = 'com.lv.tool'
-version = '2.4.1'
+version = '2.5.0'
 
 repositories {
     mavenCentral()
@@ -48,15 +48,23 @@ intellijPlatform {
     patchPluginXml {
         sinceBuild = '243'
         changeNotes = """
-              <h3>2.4.1 版本更新</h3>
+              <h3>2.5.0 版本更新</h3>
               <ul>
-                <li>修复已知问题</li>
-                <li>性能优化</li>
+                <li>统一响应式阅读链路，清理旧实现和重复任务管理逻辑</li>
+                <li>简化服务注册与依赖结构，移除旧存储、缓存、诊断和来源模块</li>
+                <li>优化书籍、章节缓存和阅读进度的数据访问路径</li>
+                <li>修复通知栏模式销毁阶段的服务初始化异常</li>
+                <li>修复书架删除、通知栏触发、面板切书同步和章节事件处理问题</li>
+                <li>清理无用导入并补充书籍仓储、章节事件、ViewModel 等回归测试</li>
               </ul>
-              <h3>Version 2.4.1</h3>
+              <h3>Version 2.5.0</h3>
               <ul>
-                <li>Fixed known issues</li>
-                <li>Performance optimization</li>
+                <li>Unified the reactive reading pipeline and removed legacy implementations and duplicate task management logic</li>
+                <li>Simplified service registration and dependency structure by removing legacy storage, cache, diagnostic, and source modules</li>
+                <li>Improved data access paths for books, chapter cache, and reading progress</li>
+                <li>Fixed service initialization during notification mode disposal</li>
+                <li>Fixed bookshelf deletion, notification triggering, panel book-switch synchronization, and chapter event handling</li>
+                <li>Cleaned unused imports and added regression tests for repository, chapter events, and ViewModel behavior</li>
               </ul>
               """
     }
