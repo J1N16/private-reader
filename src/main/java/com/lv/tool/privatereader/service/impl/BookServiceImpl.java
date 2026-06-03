@@ -7,6 +7,7 @@ import com.lv.tool.privatereader.repository.ReadingProgressRepository;
 import com.lv.tool.privatereader.service.BookService;
 import com.lv.tool.privatereader.service.ChapterService;
 import io.reactivex.rxjava3.core.Completable;
+import io.reactivex.rxjava3.core.Maybe;
 import io.reactivex.rxjava3.core.Observable;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.schedulers.Schedulers;
@@ -96,13 +97,15 @@ public class BookServiceImpl implements BookService {
     }
 
     @Override
-    public Single<Book> getLastReadBook() {
+    public Maybe<Book> getLastReadBook() {
         return Single.fromCallable(() -> readingProgressRepository.getLastReadProgressData())
                 .subscribeOn(Schedulers.io())
-                .flatMap(optionalProgress ->
-                        optionalProgress.map(progress -> getBookById(progress.bookId()))
-                                .orElse(Single.error(new RuntimeException("No last read book found")))
-                );
+                .flatMapMaybe(optionalProgress -> {
+                    if (optionalProgress.isPresent()) {
+                        return getBookById(optionalProgress.get().bookId()).toMaybe();
+                    }
+                    return Maybe.empty();
+                });
     }
 
     @Override

@@ -3,6 +3,7 @@ package com.lv.tool.privatereader.service;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.service.ChapterService.EnhancedChapter;
 import io.reactivex.rxjava3.core.Completable;
+import io.reactivex.rxjava3.core.Maybe;
 import io.reactivex.rxjava3.core.Observable;
 import io.reactivex.rxjava3.core.Single;
 import org.jetbrains.annotations.NotNull;
@@ -53,7 +54,7 @@ public interface BookService {
      *
      * @return 最近阅读的书籍，如果没有则返回空 Maybe
      */
-    Single<Book> getLastReadBook();
+    Maybe<Book> getLastReadBook();
 
     /**
      * 根据ID获取书籍

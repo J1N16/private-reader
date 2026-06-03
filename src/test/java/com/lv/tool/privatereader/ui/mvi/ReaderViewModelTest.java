@@ -6,6 +6,7 @@ import com.lv.tool.privatereader.service.BookService;
 import com.lv.tool.privatereader.service.ChapterService;
 import com.lv.tool.privatereader.service.NotificationService;
 import io.reactivex.rxjava3.core.Completable;
+import io.reactivex.rxjava3.core.Maybe;
 import io.reactivex.rxjava3.core.Observable;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.disposables.Disposable;
@@ -60,7 +61,7 @@ class ReaderViewModelTest {
         NovelParser.Chapter chapter1 = chapter("第一章", "chapter-1");
         NovelParser.Chapter chapter2 = chapter("第二章", "chapter-2");
         when(bookService.getAllBooks()).thenReturn(Observable.fromIterable(List.of(firstBook, lastReadBook)));
-        when(bookService.getLastReadBook()).thenReturn(Single.just(lastReadBook));
+        when(bookService.getLastReadBook()).thenReturn(Maybe.just(lastReadBook));
         when(bookService.getBookById("book-2")).thenReturn(Single.just(lastReadBook));
         when(chapterService.getChapterList(lastReadBook)).thenReturn(Single.just(List.of(chapter1, chapter2)));
         when(chapterService.getChapterContent(lastReadBook, "chapter-2")).thenReturn(Single.just("第二章正文"));
@@ -125,7 +126,7 @@ class ReaderViewModelTest {
         NovelParser.Chapter chapter = chapter("第一章", "chapter-1");
         RuntimeException failure = new RuntimeException("网络错误");
         when(bookService.getAllBooks()).thenReturn(Observable.just(book));
-        when(bookService.getLastReadBook()).thenReturn(Single.just(book));
+        when(bookService.getLastReadBook()).thenReturn(Maybe.just(book));
         when(bookService.getBookById("book-1")).thenReturn(Single.just(book));
         when(chapterService.getChapterList(book)).thenReturn(Single.just(List.of(chapter)));
         when(chapterService.getChapterContent(book, "chapter-1")).thenReturn(Single.error(failure));
@@ -155,7 +156,7 @@ class ReaderViewModelTest {
         AtomicReference<Book> publishedBook = new AtomicReference<>();
         AtomicReference<NovelParser.Chapter> publishedChapter = new AtomicReference<>();
         when(bookService.getAllBooks()).thenReturn(Observable.just(book));
-        when(bookService.getLastReadBook()).thenReturn(Single.just(book));
+        when(bookService.getLastReadBook()).thenReturn(Maybe.just(book));
         when(bookService.getBookById("book-1")).thenReturn(Single.just(book));
         when(chapterService.getChapterList(book)).thenReturn(Single.just(List.of(chapter1, chapter2)));
         when(chapterService.getChapterContent(book, "chapter-1")).thenReturn(Single.just("第一章正文"));
@@ -202,7 +203,7 @@ class ReaderViewModelTest {
         NovelParser.Chapter chapter1 = chapter("第一章", "chapter-1");
         NovelParser.Chapter chapter2 = chapter("第二章", "chapter-2");
         when(bookService.getAllBooks()).thenReturn(Observable.just(book));
-        when(bookService.getLastReadBook()).thenReturn(Single.just(book));
+        when(bookService.getLastReadBook()).thenReturn(Maybe.just(book));
         when(bookService.getBookById("book-1")).thenReturn(Single.just(book));
         when(chapterService.getChapterList(book)).thenReturn(Single.just(List.of(chapter1, chapter2)));
         when(chapterService.getChapterContent(book, "chapter-1"))
@@ -243,7 +244,7 @@ class ReaderViewModelTest {
     void deleteBookFailureClearsLoadingAndShowsError() throws InterruptedException {
         Book book = book("book-1", "测试书籍", 100L);
         when(bookService.getAllBooks()).thenReturn(Observable.just(book));
-        when(bookService.getLastReadBook()).thenReturn(Single.just(book));
+        when(bookService.getLastReadBook()).thenReturn(Maybe.just(book));
         when(bookService.getBookById("book-1")).thenReturn(Single.just(book));
         when(chapterService.getChapterList(book)).thenReturn(Single.just(List.of()));
         when(bookService.removeBook(book)).thenReturn(Single.error(new RuntimeException("删除失败")));

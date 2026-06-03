@@ -268,7 +268,7 @@ public class ReaderViewModel implements Disposable {
                 .subscribeOn(Schedulers.io())
                 .subscribe(books -> {
                     disposables.add(
-                        bookService.getLastReadBook().toObservable().firstElement()
+                        bookService.getLastReadBook()
                             .subscribe(
                                 lastReadBook -> {
                                     books.sort(Comparator.comparingLong(Book::getCreateTimeMillis).reversed());
