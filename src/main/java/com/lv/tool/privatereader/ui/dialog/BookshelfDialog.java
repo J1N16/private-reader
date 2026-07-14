@@ -4,11 +4,11 @@ import com.intellij.notification.Notification;
 import com.intellij.notification.NotificationGroupManager;
 import com.intellij.notification.NotificationType;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.DialogWrapper;
+import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowManager;
@@ -457,8 +457,8 @@ public class BookshelfDialog extends DialogWrapper {
             return new ArrayList<>();
         }
         try {
-            // Use ReadAction for potential file access, block for sync result needed by dialog
-            return ReadAction.compute(() -> bookService.getAllBooks()
+            // Use read action for potential file access, block for sync result needed by dialog
+            return ApplicationManager.getApplication().runReadAction((Computable<List<Book>>) () -> bookService.getAllBooks()
                 .toList()
                 .timeout(10, java.util.concurrent.TimeUnit.SECONDS)
                 .blockingGet());

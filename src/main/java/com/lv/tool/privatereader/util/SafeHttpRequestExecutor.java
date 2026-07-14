@@ -136,7 +136,7 @@ public class SafeHttpRequestExecutor {
         String domain = extractDomain(url);
         
         LOG.info("[性能监控] 开始HTTP请求 #" + requestId + ": " + url + "，最大重试次数: " + maxRetries);
-        LOG.info("[性能监控] 当前线程: " + Thread.currentThread().getName() + "，线程ID: " + Thread.currentThread().getId());
+        LOG.info("[性能监控] 当前线程: " + Thread.currentThread().getName() + "，线程ID: " + Thread.currentThread().threadId());
 
         // 记录请求开始
         NetworkPerformanceMonitor.getInstance().recordRequestStart(url, domain);
