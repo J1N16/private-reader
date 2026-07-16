@@ -33,6 +33,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Single;
+import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import com.intellij.openapi.application.ModalityState;
 
@@ -57,6 +58,7 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
     // 通知相关字段
     private final AtomicReference<Notification> currentNotificationRef = new AtomicReference<>(null);
     private MessageBusConnection messageBusConnection;
+    private final CompositeDisposable disposables = new CompositeDisposable();
 
     // 服务相关字段
     private BookService bookService;
@@ -883,7 +885,7 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
             this.messageBusConnection = null;
             LOG.debug("MessageBus connection disconnected.");
         }
-        // Temporarily removing chapterPreloader dispose due to linter error. Will investigate its lifecycle later.
+        disposables.dispose();
 
         // 尝试保存通知模式的阅读进度
         ReaderModeSettings currentReaderModeSettings;
@@ -1295,8 +1297,11 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
         LOG.info("[通知栏模式] 触发章节预加载: 书籍=" + book.getTitle() + ", 章节索引=" + chapterIndex);
 
         // 使用 ReactiveChapterPreloader 预加载前后章节
-        chapterPreloader.preloadChaptersReactive(book, chapterIndex)
-            .subscribe();
+        disposables.add(chapterPreloader.preloadChaptersReactive(book, chapterIndex)
+            .subscribe(
+                () -> LOG.debug("[通知栏模式] 章节预加载完成: 书籍=" + book.getTitle() + ", 章节索引=" + chapterIndex),
+                error -> LOG.error("[通知栏模式] 章节预加载失败: 书籍=" + book.getTitle() + ", 章节索引=" + chapterIndex, error)
+            ));
     }
 
     private void handleChapterChangedEvent(Book changedBook, Chapter newChapter) {

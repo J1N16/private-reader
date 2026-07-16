@@ -1,10 +1,15 @@
 package com.lv.tool.privatereader.util;
 
+import com.intellij.openapi.Disposable;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.util.concurrency.AppExecutorUtil;
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -12,11 +17,9 @@ import java.util.concurrent.atomic.AtomicReference;
  * 网络性能监控器
  * 用于收集和分析网络请求的性能指标
  */
-public class NetworkPerformanceMonitor {
+@Service(Service.Level.APP)
+public final class NetworkPerformanceMonitor implements Disposable {
     private static final Logger LOG = Logger.getInstance(NetworkPerformanceMonitor.class);
-    
-    // 单例实例
-    private static final NetworkPerformanceMonitor INSTANCE = new NetworkPerformanceMonitor();
     
     // 性能指标统计
     private final AtomicLong totalRequests = new AtomicLong(0);
@@ -38,14 +41,15 @@ public class NetworkPerformanceMonitor {
     
     // 最近请求记录
     private final AtomicReference<RequestRecord> lastRequest = new AtomicReference<>();
-    
-    private NetworkPerformanceMonitor() {
+    private ScheduledFuture<?> reportTask;
+
+    public NetworkPerformanceMonitor() {
         // 启动定期报告
         startPeriodicReporting();
     }
     
     public static NetworkPerformanceMonitor getInstance() {
-        return INSTANCE;
+        return ApplicationManager.getApplication().getService(NetworkPerformanceMonitor.class);
     }
     
     /**
@@ -228,21 +232,18 @@ public class NetworkPerformanceMonitor {
      * 启动定期报告
      */
     private void startPeriodicReporting() {
-        Thread reportThread = new Thread(() -> {
-            while (!Thread.currentThread().isInterrupted()) {
+        reportTask = AppExecutorUtil.getAppScheduledExecutorService().scheduleWithFixedDelay(
+            () -> {
                 try {
-                    Thread.sleep(TimeUnit.MINUTES.toMillis(5)); // 每5分钟报告一次
                     logPerformanceReport();
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    break;
                 } catch (Exception e) {
                     LOG.error("[性能监控] 定期报告时发生错误", e);
                 }
-            }
-        }, "NetworkPerformanceReporter");
-        reportThread.setDaemon(true);
-        reportThread.start();
+            },
+            5,
+            5,
+            TimeUnit.MINUTES
+        );
     }
     
     /**
@@ -254,7 +255,15 @@ public class NetworkPerformanceMonitor {
             LOG.info("[性能监控] " + getSimpleStats());
         }
     }
-    
+
+    @Override
+    public void dispose() {
+        if (reportTask != null) {
+            reportTask.cancel(false);
+            reportTask = null;
+        }
+    }
+
     /**
      * 请求记录
      */

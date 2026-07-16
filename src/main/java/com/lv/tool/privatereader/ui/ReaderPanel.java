@@ -8,7 +8,9 @@ import com.intellij.ui.components.JBList;
 import com.intellij.ui.components.JBScrollPane;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.parser.NovelParser.Chapter;
+import com.lv.tool.privatereader.repository.ReactiveChapterCacheRepository;
 import com.lv.tool.privatereader.service.BookService;
+import com.lv.tool.privatereader.storage.cache.ReactiveChapterPreloader;
 import com.intellij.util.messages.MessageBusConnection;
 import com.lv.tool.privatereader.settings.ReaderSettings;
 import com.lv.tool.privatereader.settings.ReaderSettingsListener;
@@ -33,9 +35,6 @@ import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.awt.event.AdjustmentEvent;
 import java.awt.event.AdjustmentListener;
-import java.util.List;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.Timer;
 
 /**
@@ -53,6 +52,8 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
     private final BookService bookService;
     private final NotificationService notificationService;
     private final ChapterChangeManager chapterChangeManager;
+    private final ReactiveChapterCacheRepository chapterCacheRepository;
+    private final ReactiveChapterPreloader chapterPreloader;
 
     // 设置监听器
     private final MessageBusConnection messageBusConnection;
@@ -76,17 +77,9 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
     // 当前选中的书籍和章节
     private Book selectedBook;
     private Chapter selectedChapter;
-    private Chapter lastUserSelectedChapter; // Add this line
-
-    // 待选择的书籍（用于处理书籍列表尚未加载完成的情况）
-    private Book pendingBookToSelect;
-    private volatile boolean isLoadingState = false; // Flag to prevent listener chain reactions
 
     // 防抖相关
     private final Timer saveProgressDebouncer;
-    private final AtomicLong lastChapterSelectTime = new AtomicLong(0);
-    private final AtomicReference<String> lastChapterRequestId = new AtomicReference<>("");
-    private static final int CHAPTER_SELECT_DEBOUNCE_MS = 300;
 
     private final ReaderViewModel viewModel;
     private final CompositeDisposable disposables = new CompositeDisposable();
@@ -110,6 +103,8 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
         }
 
         this.chapterChangeManager = ApplicationManager.getApplication().getService(ChapterChangeManager.class);
+        this.chapterCacheRepository = ApplicationManager.getApplication().getService(ReactiveChapterCacheRepository.class);
+        this.chapterPreloader = ApplicationManager.getApplication().getService(ReactiveChapterPreloader.class);
 
         // 初始化设置监听器
         this.messageBusConnection = ApplicationManager.getApplication().getMessageBus().connect();
@@ -278,7 +273,6 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
                 // 关键修复：只有当用户的选择与当前UI状态不一致时，才发送意图，以打破渲染循环
                 if (newlySelectedChapter != null && (currentUiState == null || !newlySelectedChapter.url().equals(currentUiState.getSelectedChapterId()))) {
                     chapterChangeManager.setEventSource(ChapterChangeEventSource.READER_PANEL);
-                    lastUserSelectedChapter = newlySelectedChapter; // Add this line
                     viewModel.processIntent(new IReaderIntent.SelectChapter(newlySelectedChapter.url()));
                 }
             }
@@ -336,221 +330,11 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
     }
 
     /**
-     * 加载书籍列表 (仅启动加载)
+     * 加载书籍列表。
      */
     public void loadBooks() {
         LOG.info("Initiating books loading...");
-        // uiAdapter.loadAllBooks(booksListModel, loadingLabel); // This is now handled by ViewModel
-    }
-
-    /**
-     * 在书籍加载完成后选择并高亮最后阅读的书籍
-     * @deprecated 此方法已由 ViewModel 和 render 方法处理，保留用于向后兼容
-     */
-    @Deprecated
-    private void selectAndHighlightLastReadBook() {
-        // 此逻辑已由 ViewModel 和 render 方法处理
-    }
-
-    /**
-     * 选择并高亮第一本书 (如果列表不为空)
-     * @deprecated 此方法已由 ViewModel 和 render 方法处理，保留用于向后兼容
-     */
-    @Deprecated
-    private void selectAndHighlightFirstBook() {
-        // 此逻辑已由 ViewModel 和 render 方法处理
-    }
-
-    /**
-     * 加载指定书籍的章节列表
-     */
-    private void loadChapters(Book book) {
-        if (book == null) return;
-        // This is now handled by the ViewModel.
-        // uiAdapter.loadBookChapters(book, chaptersListModel, chaptersList, loadingLabel);
-    }
-
-    /**
-     * 加载章节内容
-     */
-    private void loadChapterContent(Book book, Chapter chapter) {
-        // This is now handled by the ViewModel.
-    }
-
-
-    /**
-     * Restores scroll position based on the book's progress data.
-     */
-    private void restoreScrollPosition(Book book, Chapter chapter) {
-         int targetPosition = 0;
-         if (book != null && chapter != null && book.getLastReadChapterId() != null &&
-             chapter.url() != null && chapter.url().equals(book.getLastReadChapterId())) {
-             // Use the progress data already present in the Book object
-             targetPosition = book.getLastReadPosition();
-             LOG.debug("Restoring scroll position for " + book.getTitle() + " / " + chapter.title() + " to " + targetPosition);
-         } else {
-             LOG.debug("Setting scroll position to top for: " + (chapter != null ? chapter.title() : "null"));
-         }
-
-         JScrollBar verticalScrollBar = contentScrollPane.getVerticalScrollBar();
-         // Ensure position is valid
-         targetPosition = Math.max(0, Math.min(targetPosition, verticalScrollBar.getMaximum() - verticalScrollBar.getVisibleAmount()));
-         verticalScrollBar.setValue(targetPosition);
-    }
-
-    /**
-     * Saves the initial progress when a chapter is loaded and scrolled to position.
-     */
-    private void saveInitialProgressForChapter(Book book, Chapter chapter) {
-        if (bookService != null && book != null && chapter != null) {
-            final int positionToSave = contentScrollPane.getVerticalScrollBar().getValue();
-            LOG.debug("[SAVE_TRACE] RRP.loadChapterContent: Saving initial progress - Book={}, Chapter={}, Pos={}",
-                      book.getTitle(), chapter.title(), positionToSave);
-            try {
-                // Call bookService to save progress asynchronously
-                bookService.saveReadingProgress(book, chapter.url(), chapter.title(), positionToSave)
-                    .subscribe(
-                        null, // onComplete (Void)
-                        error -> LOG.error("[SAVE_TRACE] RRP.loadChapterContent: Error saving initial progress via BookService", error)
-                    );
-            } catch (Exception e) {
-                LOG.error("[SAVE_TRACE] RRP.loadChapterContent: Exception calling BookService.saveReadingProgress", e);
-            }
-        } else {
-            LOG.warn("[SAVE_TRACE] RRP.loadChapterContent: Skipping initial progress save - BookService, book, or chapter is null.");
-        }
-    }
-
-    /**
-     * Helper method to select the last read chapter in the list.
-     * This is typically called AFTER chapters are loaded.
-     */
-    private void selectLastReadChapter() {
-            if (selectedBook == null || chaptersListModel.isEmpty()) {
-            LOG.debug("无法选择上次阅读的章节: 未选择书籍或章节列表为空");
-            // 如果列表为空但已选择书籍，清空内容区域
-                    if (selectedBook != null && chaptersListModel.isEmpty()) {
-                ApplicationManager.getApplication().invokeLater(() -> {
-                    isLoadingState = true;
-                    try {
-                        // 合并UI更新操作
-                        contentTextArea.setText("");
-                        if (currentChapterDisplayLabel != null) currentChapterDisplayLabel.setText(" ");
-                        this.selectedChapter = null;
-                    } finally {
-                        isLoadingState = false;
-                    }
-                }, ModalityState.defaultModalityState());
-                    }
-                return;
-            }
-
-        // 在当前线程执行查找逻辑，避免不必要的线程切换
-            String lastReadChapterId = selectedBook.getLastReadChapterId();
-                Chapter chapterToLoad = null;
-                int chapterIndexToSelect = -1;
-
-        // 查找上次阅读的章节
-            if (lastReadChapterId != null && !lastReadChapterId.isEmpty()) {
-            // 使用Book的章节索引Map查找章节
-            chapterIndexToSelect = selectedBook.getChapterIndex(lastReadChapterId);
-            if (chapterIndexToSelect != -1) {
-                // 使用Book的getChapterById方法获取章节对象
-                chapterToLoad = selectedBook.getChapterById(lastReadChapterId);
-                if (chapterToLoad != null) {
-                    LOG.debug("使用索引Map查找并自动选择上次阅读的章节: " + chapterToLoad.title() + ", 索引: " + chapterIndexToSelect);
-                }
-            }
-            
-            // 如果索引Map中没有找到，则回退到线性搜索
-            if (chapterToLoad == null) {
-                LOG.debug("索引Map中未找到章节，回退到线性搜索");
-                for (int i = 0; i < chaptersListModel.getSize(); i++) {
-                    Chapter chapter = chaptersListModel.getElementAt(i);
-                    if (lastReadChapterId.equals(chapter.url())) {
-                            chapterToLoad = chapter;
-                            chapterIndexToSelect = i;
-                        LOG.debug("通过线性搜索自动选择上次阅读的章节: " + chapter.title());
-                            break;
-                        }
-                    }
-            }
-            
-                    if (chapterToLoad == null) {
-                LOG.warn("未在加载的章节列表中找到上次阅读的章节ID [" + lastReadChapterId + "]，将选择第一章");
-                }
-            } else {
-            LOG.debug("未找到上次阅读的章节ID，将选择第一章");
-            }
-
-        // 如果没有找到上次阅读的章节，则选择第一章（如果列表不为空）
-                if (chapterToLoad == null && !chaptersListModel.isEmpty()) {
-                    chapterToLoad = chaptersListModel.getElementAt(0);
-                    chapterIndexToSelect = 0;
-            LOG.debug("选择第一章作为默认: " + chapterToLoad.title());
-        }
-
-        // 保存找到的章节，用于UI线程中的操作
-        final Chapter finalChapterToLoad = chapterToLoad;
-        final int finalChapterIndexToSelect = chapterIndexToSelect;
-
-        // 在UI线程中更新UI组件
-        ApplicationManager.getApplication().invokeLater(() -> {
-            isLoadingState = true;
-            try {
-                if (finalChapterToLoad != null) {
-                    // 合并UI更新操作
-                    selectedChapter = finalChapterToLoad;
-                    if (chaptersList.getSelectedIndex() != finalChapterIndexToSelect) {
-                        chaptersList.setSelectedIndex(finalChapterIndexToSelect);
-                    }
-                    chaptersList.ensureIndexIsVisible(finalChapterIndexToSelect);
-                    LOG.debug("[selectLastReadChapter] 直接加载章节内容: " + finalChapterToLoad.title());
-                    loadChapterContent(selectedBook, selectedChapter);
-                } else {
-                    LOG.debug("无法选择章节（章节列表为空或变为空）");
-                    contentTextArea.setText("");
-                     if (currentChapterDisplayLabel != null) currentChapterDisplayLabel.setText(" ");
-                     this.selectedChapter = null;
-                }
-            } finally {
-                isLoadingState = false;
-            }
-        }, ModalityState.defaultModalityState());
-    }
-
-    /**
-     * 保存当前阅读进度
-     * @return 返回一个 Completable，表示异步保存操作，如果不需要保存则返回 Completable.complete()
-     */
-    private Completable saveCurrentProgress() {
-        if (bookService == null) {
-            LOG.warn("BookService 未初始化，无法保存进度");
-            return Completable.complete();
-        }
-        if (selectedBook != null && selectedChapter != null) {
-            int position = contentScrollPane.getVerticalScrollBar().getValue();
-            LOG.debug("保存阅读进度: 书籍=" + selectedBook.getTitle()
-                      + ", 章节=" + selectedChapter.title()
-                      + ", 滚动位置=" + position);
-            try {
-                // 直接在当前线程设置Book对象的属性，避免线程切换
-                selectedBook.updateReadingProgress(selectedChapter.url(), position,
-                    contentScrollPane.getVerticalScrollBar().getValue() > 0 ?
-                    selectedBook.getLastReadPage() : 1);
-
-                // 调用响应式BookService方法保存进度
-                return bookService.saveReadingProgress(selectedBook, selectedChapter.url(), selectedChapter.title(), position)
-                       .doOnError(e -> LOG.error("保存阅读进度失败: " + e.getMessage(), e))
-                       .doOnComplete(() -> LOG.debug("阅读进度保存成功"));
-            } catch (Exception e) {
-                LOG.error("初始化保存进度操作时发生错误: " + e.getMessage(), e);
-                return Completable.error(e);
-            }
-        } else {
-            LOG.debug("跳过保存进度: 未选择书籍或章节");
-            return Completable.complete();
-        }
+        viewModel.processIntent(new IReaderIntent.LoadInitialData());
     }
 
     /**
@@ -613,7 +397,7 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
 
             // 重新加载当前章节以应用新设置
             if (selectedChapter != null) {
-                loadChapterContent(selectedBook, selectedChapter);
+                viewModel.processIntent(new IReaderIntent.SelectChapter(selectedChapter.url()));
             }
         }
     }
@@ -644,43 +428,71 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
      * 清理章节缓存
      */
     private void clearChapterCache() {
-        // TODO: 实现章节缓存清理逻辑
-        LOG.info("清理章节缓存");
+        if (chapterCacheRepository == null) {
+            LOG.warn("章节缓存仓库未初始化，无法清理缓存");
+            return;
+        }
+
+        Book bookToClear = selectedBook;
+        Completable clearOperation = bookToClear != null
+            ? chapterCacheRepository.clearCacheReactive(bookToClear.getId())
+            : chapterCacheRepository.clearAllCacheReactive();
+
+        disposables.add(clearOperation
+            .doOnSubscribe(disposable -> LOG.info(bookToClear != null
+                ? "开始清理当前书籍章节缓存: " + bookToClear.getTitle()
+                : "开始清理全部章节缓存"))
+            .subscribe(
+                () -> LOG.info(bookToClear != null
+                    ? "当前书籍章节缓存已清理: " + bookToClear.getTitle()
+                    : "全部章节缓存已清理"),
+                error -> LOG.error("清理章节缓存失败", error)
+            ));
     }
 
     /**
      * 停止预加载
      */
     private void stopPreloading() {
-        // TODO: 实现预加载停止逻辑
-        LOG.info("停止预加载");
+        if (chapterPreloader == null) {
+            LOG.warn("章节预加载器未初始化，无法停止预加载");
+            return;
+        }
+        if (selectedBook == null) {
+            LOG.debug("当前未选择书籍，无需停止预加载");
+            return;
+        }
+
+        chapterPreloader.stopPreload(selectedBook.getId());
+        LOG.info("已请求停止当前书籍预加载: " + selectedBook.getTitle());
     }
 
     /**
      * 开始预加载
      */
     private void startPreloading() {
-        // TODO: 实现预加载开始逻辑
-        LOG.info("开始预加载");
-    }
-
-    /**
-     * 章节列表加载完成后预加载当前及前后3章
-     */
-    private void preloadAdjacentChapters(Book book, Chapter currentChapter) {
-        if (book == null || currentChapter == null) return;
-        java.util.List<Chapter> chapters = book.getCachedChapters();
-        if (chapters == null || chapters.isEmpty()) return;
-        int idx = book.getChapterIndex(currentChapter.url());
-        for (int offset = -3; offset <= 3; offset++) {
-            int targetIdx = idx + offset;
-            if (targetIdx >= 0 && targetIdx < chapters.size()) {
-                Chapter toPreload = chapters.get(targetIdx);
-                if (!toPreload.url().equals(currentChapter.url())) {
-                    // uiAdapter.getChapterContent(book, toPreload.url()).subscribe(); // REMOVED
-                }
-            }
+        if (chapterPreloader == null) {
+            LOG.warn("章节预加载器未初始化，无法开始预加载");
+            return;
         }
+        Book bookToPreload = selectedBook;
+        Chapter chapterToPreload = selectedChapter;
+        if (bookToPreload == null || chapterToPreload == null) {
+            LOG.debug("当前未选择书籍或章节，跳过预加载");
+            return;
+        }
+
+        int currentChapterIndex = bookToPreload.getChapterIndex(chapterToPreload.url());
+        if (currentChapterIndex < 0) {
+            LOG.warn("无法开始预加载：当前章节不在书籍章节列表中，章节=" + chapterToPreload.title());
+            return;
+        }
+
+        disposables.add(chapterPreloader.preloadChaptersReactive(bookToPreload, currentChapterIndex)
+            .subscribe(
+                () -> LOG.info("当前书籍预加载任务完成: " + bookToPreload.getTitle()),
+                error -> LOG.error("当前书籍预加载失败: " + bookToPreload.getTitle(), error)
+            ));
     }
 
     /**
@@ -698,19 +510,6 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
                 int position = contentScrollPane.getVerticalScrollBar().getValue();
                 viewModel.processIntent(new IReaderIntent.SaveProgress(currentChapter.url(), position));
             }
-
-            // 异步保存阅读进度，不阻塞UI线程
-            LOG.info("开始异步保存阅读进度...");
-            // saveCurrentProgress() // This logic is now handled by the debouncer and final save intent
-            //     .doOnSubscribe(s -> LOG.debug("阅读进度保存操作已订阅"))
-            //     .doOnSuccess(v -> LOG.info("阅读进度保存成功"))
-            //     .doOnError(e -> LOG.error("阅读进度保存失败: " + e.getMessage(), e))
-            //     .doFinally(s -> LOG.debug("阅读进度保存操作完成: " + s))
-            //     .subscribe();
-            
-            // 继续其他资源释放操作，不等待保存完成
-            LOG.info("释放 UI 适配器...");
-        // uiAdapter.dispose(); // REMOVED
 
             // 断开消息总线连接
         if (messageBusConnection != null) {
@@ -793,9 +592,7 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
     public void reloadCurrentChapter() {
         if (selectedBook != null && selectedChapter != null) {
             LOG.info("重新加载章节内容: " + selectedChapter.title());
-            // Consider clearing cache if needed before reloading
-            // ChapterCacheManager.getInstance().removeCache(...)
-            loadChapterContent(selectedBook, selectedChapter);
+            viewModel.processIntent(new IReaderIntent.SelectChapter(selectedChapter.url()));
             // Provide user feedback
             if (notificationService != null) {
                 notificationService.showInfo("刷新", "已刷新当前章节内容").subscribe();
@@ -814,9 +611,7 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
     public void refreshChapterList() {
         if (selectedBook != null) {
             LOG.info("刷新章节列表: " + selectedBook.getTitle());
-            // Clear current list model before loading
-            chaptersListModel.clear();
-            loadChapters(selectedBook);
+            viewModel.processIntent(new IReaderIntent.RefreshChapters());
              // Provide user feedback
             if (notificationService != null) {
                 notificationService.showInfo("刷新", "已刷新章节列表").subscribe();
@@ -835,12 +630,7 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
      */
     public void triggerLoadLastReadState() {
         LOG.info("外部触发加载上次阅读状态...");
-        // isLoadingState will be managed by the methods called below (selectAndHighlightLastReadBook or loadBooks -> selectAndHighlightLastReadBook)
-        if (booksListModel.isEmpty()) {
-            loadBooks(); 
-        } else {
-             selectAndHighlightLastReadBook();
-        }
+        loadBooks();
     }
 
     /**
@@ -853,53 +643,7 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
             return;
         }
         LOG.info("外部请求选择书籍: " + bookToSelect.getTitle());
-
-        ApplicationManager.getApplication().invokeLater(() -> {
-            isLoadingState = true;
-            try {
-        if (booksListModel.isEmpty()) {
-            LOG.info("书籍列表为空，将书籍 '" + bookToSelect.getTitle() + "' 保存到待选择列表");
-            pendingBookToSelect = bookToSelect;
-                    loadBooks();
-                    return;
-        }
-
-                // 使用书籍ID直接查找，避免线性搜索
-                int foundIndex = -1;
-        for (int i = 0; i < booksListModel.getSize(); i++) {
-                    Book book = booksListModel.getElementAt(i);
-                    if (book != null && book.getId() != null && book.getId().equals(bookToSelect.getId())) {
-                        foundIndex = i;
-                        break;
-                    }
-                }
-
-                if (foundIndex != -1) {
-                    if (booksList.getSelectedIndex() == foundIndex) {
-                    LOG.debug("书籍 '" + bookToSelect.getTitle() + "' 已被选中");
-                        selectedBook = bookToSelect; // 确保selectedBook是当前实例
-                        if (chaptersListModel.isEmpty()) {
-                            LOG.debug("[selectBookAndLoadProgress] 已选中书籍的章节为空，加载章节");
-                            loadChapters(selectedBook);
-                    }
-                } else {
-                        LOG.debug("在索引 " + foundIndex + " 找到书籍，设置选中项");
-                        // 合并UI更新操作
-                        selectedBook = booksListModel.getElementAt(foundIndex);
-                        booksList.setSelectedIndex(foundIndex);
-                        booksList.ensureIndexIsVisible(foundIndex);
-                        LOG.debug("[selectBookAndLoadProgress] 直接加载书籍章节");
-                        loadChapters(selectedBook);
-                    }
-                } else {
-                    LOG.warn("无法选择书籍：列表中未找到 '" + bookToSelect.getTitle() + "'，设置为待选择并重新加载书籍");
-        pendingBookToSelect = bookToSelect;
-                    loadBooks();
-                }
-            } finally {
-                isLoadingState = false;
-            }
-        }, ModalityState.defaultModalityState());
+        viewModel.processIntent(new IReaderIntent.SelectBook(bookToSelect.getId()));
     }
 
     /**
@@ -915,110 +659,11 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
         }
 
         LOG.info("加载指定章节：书籍=" + book.getTitle() + ", 章节=" + chapter.title());
-
-        ApplicationManager.getApplication().invokeLater(() -> {
-            isLoadingState = true;
-            try {
-                // 如果当前选中的书籍与目标书籍不同，先选择目标书籍
-                if (selectedBook == null || !selectedBook.getId().equals(book.getId())) {
-                    LOG.debug("[loadChapter] 书籍不同或为空，选择目标书籍: " + book.getTitle());
-                    
-                    // 设置当前书籍和章节
-                    this.selectedBook = book;
-                    this.selectedChapter = chapter;
-
-                    // 在列表中查找并选择目标书籍
-                    boolean bookFound = false;
-                    for (int i = 0; i < booksListModel.getSize(); i++) {
-                        if (booksListModel.getElementAt(i).getId().equals(book.getId())) {
-                            if (booksList.getSelectedIndex() != i) {
-                                booksList.setSelectedIndex(i);
-                            }
-                            booksList.ensureIndexIsVisible(i);
-                            bookFound = true;
-                            break;
-                        }
-                    }
-                    
-                    if (!bookFound) {
-                        LOG.warn("[loadChapter] 列表中未找到目标书籍 " + book.getTitle());
-                    }
-                    
-                    // 清空并重新加载章节列表
-                    chaptersListModel.clear();
-                    List<Chapter> chaptersFromCache = book.getCachedChapters();
-                    if (chaptersFromCache != null && !chaptersFromCache.isEmpty()) {
-                        for (Chapter chap : chaptersFromCache) {
-                            chaptersListModel.addElement(chap);
-                        }
-                    } else {
-                        LOG.warn("[loadChapter] 书籍 " + book.getTitle() + " 没有缓存的章节，无法加载特定章节 " + chapter.title());
-                    }
-
-                    // 在章节列表中查找并选择目标章节
-                    boolean chapterFoundInList = false;
-            for (int i = 0; i < chaptersListModel.getSize(); i++) {
-                        if (chaptersListModel.getElementAt(i).url().equals(chapter.url())) {
-                            chaptersList.setSelectedIndex(i);
-                            chaptersList.ensureIndexIsVisible(i);
-                            chapterFoundInList = true;
-                            break;
-                        }
-                    }
-                    
-                    if (!chapterFoundInList && chaptersListModel.isEmpty() && 
-                        chaptersFromCache != null && chaptersFromCache.contains(chapter)) {
-                        LOG.debug("[loadChapter] 章节 " + chapter.title() + " 在刷新后的列表模型中未找到，但存在于缓存中，添加它");
-                        chaptersListModel.addElement(chapter);
-                        
-                        // 再次尝试选择
-                        for (int i = 0; i < chaptersListModel.getSize(); i++) {
-                            if (chaptersListModel.getElementAt(i).url().equals(chapter.url())) {
-                    chaptersList.setSelectedIndex(i);
-                    chaptersList.ensureIndexIsVisible(i);
-                                chapterFoundInList = true;
-                    break;
-                }
-            }
-                    }
-                     if (!chapterFoundInList) {
-                        LOG.warn("[loadChapter] 目标章节 " + chapter.title() + " 在书籍 " + book.getTitle() + " 的章节列表中未找到");
-                    }
-                } else if (selectedChapter == null || !selectedChapter.url().equals(chapter.url())) {
-                    // 书籍相同，但章节不同或为空
-                    this.selectedChapter = chapter;
-                    
-                    // 在章节列表中查找并选择目标章节
-                    boolean chapterFoundInList = false;
-            for (int i = 0; i < chaptersListModel.getSize(); i++) {
-                        if (chaptersListModel.getElementAt(i).url().equals(chapter.url())) {
-                            if (chaptersList.getSelectedIndex() != i) {
-                                chaptersList.setSelectedIndex(i);
-                            }
-                    chaptersList.ensureIndexIsVisible(i);
-                            chapterFoundInList = true;
-                    break;
-                }
-            }
-                    
-                     if (!chapterFoundInList) {
-                        LOG.warn("[loadChapter] 目标章节 " + chapter.title() + " 在当前书籍 " + book.getTitle() + " 的章节列表中未找到");
-                    }
-                } else {
-                    // 书籍和章节都已选择，可能是强制重新加载
-                    LOG.debug("[loadChapter] 书籍和章节已选择，直接加载章节内容: " + chapter.title());
-                }
-                
-                // 加载章节内容
-                LOG.debug("[loadChapter] 直接加载章节内容: 书籍=" + this.selectedBook.getTitle() + ", 章节=" + this.selectedChapter.title());
-                loadChapterContent(this.selectedBook, this.selectedChapter);
-
-                // 更新书籍的阅读进度，设置为新加载章节的第一页
-                this.selectedBook.updateReadingProgress(this.selectedChapter.url(), 0, 1);
-            } finally {
-                isLoadingState = false;
-            }
-        }, ModalityState.defaultModalityState());
+        if (selectedBook == null || !selectedBook.getId().equals(book.getId())) {
+            viewModel.processIntent(new IReaderIntent.HandleExternalChapterChange(book, chapter));
+        } else {
+            viewModel.processIntent(new IReaderIntent.SelectChapter(chapter.url()));
+        }
     }
 
     // --- End Public API ---
@@ -1043,9 +688,11 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
         }
         
         // Update selected book
+        selectedBook = null;
         if (state.getSelectedBookId() != null) {
             for (int i = 0; i < booksListModel.getSize(); i++) {
                 if (booksListModel.getElementAt(i).getId().equals(state.getSelectedBookId())) {
+                    selectedBook = booksListModel.getElementAt(i);
                     if (booksList.getSelectedIndex() != i) {
                         booksList.setSelectedIndex(i);
                         booksList.ensureIndexIsVisible(i);
@@ -1063,9 +710,11 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
             }
         }
         
+        selectedChapter = null;
         if (state.getSelectedChapterId() != null) {
             for (int i = 0; i < chaptersListModel.getSize(); i++) {
                 if (chaptersListModel.getElementAt(i).url().equals(state.getSelectedChapterId())) {
+                    selectedChapter = chaptersListModel.getElementAt(i);
                     if (chaptersList.getSelectedIndex() != i) {
                         chaptersList.setSelectedIndex(i);
                         chaptersList.ensureIndexIsVisible(i);
@@ -1073,7 +722,6 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
                     break;
                 }
             }
-        
         }
         
         currentChapterDisplayLabel.setText(state.getCurrentChapterTitle());

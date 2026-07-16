@@ -219,6 +219,7 @@
     <!-- 响应式服务 -->
     <applicationService serviceImplementation="com.lv.tool.privatereader.async.ReactiveTaskManager"/>
     <applicationService serviceImplementation="com.lv.tool.privatereader.async.ReactiveSchedulers"/>
+    <applicationService serviceImplementation="com.lv.tool.privatereader.util.NetworkPerformanceMonitor"/>
     <!-- 添加新的模式切换服务 -->
     <applicationService serviceImplementation="com.lv.tool.privatereader.service.ReaderModeSwitcher"/>
     <!-- 添加通知栏模式服务 -->

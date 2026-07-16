@@ -488,14 +488,14 @@ public class ReaderViewModel implements Disposable {
 
        if (currentIndex != -1) {
            final int indexToPreload = currentIndex;
-           chapterPreloader.preloadChaptersReactive(book, indexToPreload)
+           disposables.add(chapterPreloader.preloadChaptersReactive(book, indexToPreload)
                .toObservable()
                .subscribeOn(Schedulers.single())
                .subscribe(
                    v -> {},
                    error -> LOG.error("Error initiating chapter preloading", error),
                    () -> LOG.debug("Preloading initiated for chapters around index: " + indexToPreload)
-               );
+               ));
        }
    }
 
