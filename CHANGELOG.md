@@ -1,5 +1,14 @@
 # Changelog 更新日志
 
+## [2.5.1] - 2026-07-16
+
+### 新增 | Added
+- 添加网络性能监控器，统一跟踪网络请求耗时和执行状态 | Added a network performance monitor to track request timing and execution status
+
+### 修复 | Fixes
+- 修复无最近阅读记录时初始化失败的问题 | Fixed initialization failures when no recent reading record exists
+- 修复安全 HTTP 请求日志中的线程 ID 获取方式 | Fixed thread ID retrieval in safe HTTP request logs
+
 ## [2.5.0] - 2026-05-27
 
 ### 架构优化 | Architecture Improvements
