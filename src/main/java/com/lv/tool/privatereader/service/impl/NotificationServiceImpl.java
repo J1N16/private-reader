@@ -25,6 +25,7 @@ import com.lv.tool.privatereader.service.BookService;
 import com.lv.tool.privatereader.service.ChapterService;
 import com.lv.tool.privatereader.service.NotificationService;
 import com.lv.tool.privatereader.service.impl.notification.ChapterNavigationHelper;
+import com.lv.tool.privatereader.service.impl.notification.PaginationHelper;
 import com.lv.tool.privatereader.service.impl.notification.ProgressSaveHelper;
 import com.lv.tool.privatereader.settings.NotificationReaderSettings;
 import com.lv.tool.privatereader.settings.ReaderModeSettings;
@@ -69,11 +70,14 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
     private ChapterChangeManager chapterChangeManager;
 
     // 分页相关字段
-    private List<String> currentPages = new ArrayList<>();
-    private int currentPageIndex = 0;
-    private Book currentBook;
-    private String currentChapterId;
-    private String currentChapterTitle;
+    // volatile：这些字段在 EDT（UI 事件、invokeLater 回调）写入，可能在 io 线程/后台回调
+    // 读取（如 ensureServicesInitialized 后的异步链路）。虽多数读写已收敛到 EDT，加 volatile
+    // 消除跨线程陈旧读的隐患（成本极低）。
+    private volatile List<String> currentPages = new ArrayList<>();
+    private volatile int currentPageIndex = 0;
+    private volatile Book currentBook;
+    private volatile String currentChapterId;
+    private volatile String currentChapterTitle;
 
     // 加载状态标志
     private final AtomicBoolean isLoadingChapter = new AtomicBoolean(false);
@@ -464,10 +468,10 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
 
         List<Chapter> cachedChapters = currentBook.getCachedChapters();
         if (cachedChapters != null && !cachedChapters.isEmpty()) {
-            LOG.info("使用Book中的cachedChapters进行导航，章节数量: " + cachedChapters.size());
+            LOG.debug("使用Book中的cachedChapters进行导航，章节数量: " + cachedChapters.size());
             reactiveSchedulers.runOnUI(() -> processChapterNavigationWithCachedChapters(project, cachedChapters, direction));
         } else {
-            LOG.info("Book中的cachedChapters为空，使用bookService.getChaptersSync获取章节列表");
+            LOG.debug("Book中的cachedChapters为空，使用bookService.getChaptersSync获取章节列表");
             Single.fromCallable(() -> bookService.getChaptersSync(currentBook.getId()))
                 .subscribeOn(Schedulers.io())
                 .timeout(30, java.util.concurrent.TimeUnit.SECONDS)
@@ -486,7 +490,7 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
         
         showCurrentPageInternal(project, title, notificationContent);
         saveNotificationModeProgress();
-        LOG.info("[通知栏模式] 成功显示页面，当前页索引: " + currentPageIndex);
+        LOG.debug("[通知栏模式] 成功显示页面，当前页索引: " + currentPageIndex);
     }
     
     private boolean isReadingActive() {
@@ -568,52 +572,7 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
 
         // Get the target chapter and its content
         ChapterService.EnhancedChapter targetChapter = chapters.get(targetIndex);
-        String targetChapterId = targetChapter.url();
-        String targetChapterTitle = targetChapter.title();
-        String targetChapterContent = targetChapter.getContent();
-
-        if (targetChapterContent == null || targetChapterContent.isEmpty()) {
-             LOG.warn("目标章节内容为空: " + targetChapterId);
-             showError("导航失败", "目标章节内容为空");
-             return;
-        }
-
-        // Update current book, chapter, and page
-        this.currentChapterId = targetChapterId;
-        this.currentChapterTitle = targetChapterTitle;
-        setCurrentChapterContent(targetChapterContent);
-        this.currentPageIndex = 0;
-
-        if (currentPages.isEmpty()) {
-            LOG.warn("分页后内容为空，无法显示通知: " + targetChapterId);
-            showError("显示章节失败", "分页后内容为空");
-            return;
-        }
-
-        // 使用工具类构建通知内容并显示
-        String title = ProgressSaveHelper.buildNotificationTitle(currentBook.getTitle(), targetChapterTitle);
-        String notificationContent = ProgressSaveHelper.buildNotificationContent(
-            currentPages.get(currentPageIndex), currentPageIndex, currentPages.size(),
-            notificationSettings != null && notificationSettings.isShowReadingProgress());
-
-        showCurrentPageInternal(project, title, notificationContent);
-
-        // 使用工具类保存进度
-        ProgressSaveHelper.saveProgress(currentBook, targetChapterId, targetChapterTitle, currentPageIndex);
-
-        LOG.info("[通知栏模式] 导航到章节: " + targetChapterId);
-
-        // 触发章节预加载
-        triggerChapterPreload(currentBook, targetIndex);
-
-        // 设置事件源并发布章节变更事件
-        if (chapterChangeManager != null) {
-            chapterChangeManager.setEventSource(ChapterChangeEventSource.NOTIFICATION_SERVICE);
-        }
-        ApplicationManager.getApplication().getMessageBus()
-                .syncPublisher(CurrentChapterNotifier.TOPIC)
-                .currentChapterChanged(currentBook, new NovelParser.Chapter(targetChapterTitle, targetChapterId));
-        LOG.info("[通知栏模式] 已发布章节变更事件: " + targetChapterTitle);
+        showNavigatedChapter(project, targetChapter.url(), targetChapter.title(), targetChapter.getContent(), targetIndex, false);
     }
 
     /**
@@ -672,49 +631,8 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
             reactiveSchedulers.runOnUI(() -> showError("导航失败", "获取章节内容时出错: " + e.getMessage()));
         })
         .subscribe(content -> {
-            reactiveSchedulers.runOnUI(() -> {
-                if (content == null || content.isEmpty()) {
-                    LOG.warn("目标章节内容为空: " + targetChapterId);
-                    showError("导航失败", "目标章节内容为空");
-                    return;
-                }
-
-                // 更新当前章节信息
-                currentChapterId = targetChapterId;
-                currentChapterTitle = targetChapterTitle;
-                setCurrentChapterContent(content);
-                if (currentPages.isEmpty()) {
-                    LOG.warn("[通知栏模式] 分页后内容为空，无法显示通知: " + targetChapterId);
-                    showError("显示章节失败", "分页后内容为空");
-                    return;
-                }
-                currentPageIndex = 0;
-
-                // 使用工具类构建通知内容并显示
-                String title = ProgressSaveHelper.buildNotificationTitle(currentBook.getTitle(), targetChapterTitle);
-                String notificationContent = ProgressSaveHelper.buildNotificationContent(
-                    currentPages.get(currentPageIndex), currentPageIndex, currentPages.size(),
-                    notificationSettings != null && notificationSettings.isShowReadingProgress());
-
-                showCurrentPageInternal(project, title, notificationContent);
-
-                // 使用工具类保存进度
-                ProgressSaveHelper.saveProgress(currentBook, targetChapterId, targetChapterTitle, currentPageIndex);
-
-                LOG.info("[通知栏模式] 使用cachedChapters导航到章节: " + targetChapterId);
-
-                // 触发章节预加载
-                triggerChapterPreload(currentBook, targetIndex);
-
-                // 设置事件源并发布章节变更事件
-                if (chapterChangeManager != null) {
-                    chapterChangeManager.setEventSource(ChapterChangeEventSource.NOTIFICATION_SERVICE);
-                }
-                ApplicationManager.getApplication().getMessageBus()
-                        .syncPublisher(CurrentChapterNotifier.TOPIC)
-                        .currentChapterChanged(currentBook, targetChapter);
-                LOG.info("[通知栏模式] 已发布章节变更事件: " + targetChapter.title());
-            });
+            reactiveSchedulers.runOnUI(() ->
+                showNavigatedChapter(project, targetChapter, content, targetIndex, false));
         });
     }
 
@@ -746,7 +664,7 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
             savedPageNumber = restoreSavedPageNumber(book.getId(), chapterId, savedPageNumber);
 
             // 记录恢复的页码
-            LOG.info(String.format("[页码调试] (Reactive) 恢复的页码: %d", savedPageNumber));
+            LOG.debug("[页码调试] (Reactive) 恢复的页码: {}", savedPageNumber);
 
             // 使用 setCurrentChapterContent 方法进行分页
             setCurrentChapterContent(content);
@@ -757,18 +675,18 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
             } else {
                 this.currentPageIndex = 0;
             }
-            LOG.info(String.format("[页码调试] (Reactive) 重新设置页码索引: %d (对应页码: %d)",
-                    this.currentPageIndex, this.currentPageIndex + 1));
+            LOG.debug("[页码调试] (Reactive) 重新设置页码索引: {} (对应页码: {})",
+                    this.currentPageIndex, this.currentPageIndex + 1);
 
             // 更新UI
             // updateNotificationContent(project, book.getTitle(), currentChapterTitle);
 
             // 确保页码索引在有效范围内
             if (this.currentPageIndex < 0) {
-                LOG.info("[页码调试] (Reactive) 页码索引小于0，重置为0");
+                LOG.debug("[页码调试] (Reactive) 页码索引小于0，重置为0");
                 this.currentPageIndex = 0;
             } else if (this.currentPageIndex >= currentPages.size()) {
-                LOG.info("[页码调试] (Reactive) 页码索引超出范围，重置为最后一页");
+                LOG.debug("[页码调试] (Reactive) 页码索引超出范围，重置为最后一页");
                 this.currentPageIndex = Math.max(0, currentPages.size() - 1);
             }
 
@@ -805,7 +723,7 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
                 if (readingProgressRepository != null) {
                     // 使用带页码参数的重载方法，position设为0，直接使用currentPageIndex + 1作为页码
                     readingProgressRepository.updateProgress(book, chapterId, currentChapterTitle, 0, currentPageIndex + 1);
-                    LOG.info(String.format("[页码调试] (Reactive) 直接保存页码: %d", currentPageIndex + 1));
+                    LOG.debug("[页码调试] (Reactive) 直接保存页码: {}", currentPageIndex + 1);
                 } else {
                     LOG.warn("[页码调试] (Reactive) 无法获取 SqliteReadingProgressRepository 实例，使用 bookService.saveReadingProgress 方法");
                     bookService.saveReadingProgress(book, chapterId, currentChapterTitle, currentPageIndex);
@@ -852,30 +770,6 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
     }
 
     @Override
-    public Single<Notification> showPrevPageReactive() {
-        // This reactive method is likely for the main reader panel and might need different logic
-        // For now, it will just log a warning
-        LOG.warn("showPrevPageReactive called - Implementation needed for main reader panel.");
-        return Single.error(new UnsupportedOperationException("Not implemented for notification bar mode"));
-    }
-
-    @Override
-    public Single<Notification> showNextPageReactive() {
-         // This reactive method is likely for the main reader panel and might need different logic
-        // For now, it will just log a warning
-        LOG.warn("showNextPageReactive called - Implementation needed for main reader panel.");
-        return Single.error(new UnsupportedOperationException("Not implemented for notification bar mode"));
-    }
-
-    @Override
-    public Single<Notification> navigateChapterReactive(int direction) {
-         // This reactive method is likely for the main reader panel and might need different logic
-        // For now, it will just log a warning
-        LOG.warn("navigateChapterReactive called - Implementation needed for main reader panel.");
-        return Single.error(new UnsupportedOperationException("Not implemented for notification bar mode"));
-    }
-
-    @Override
     public void dispose() {
         LOG.debug("Disposing NotificationServiceImpl");
         // stopAutoRead(); // Call was already removed
@@ -916,50 +810,7 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
      * @return 分页后的内容列表
      */
     private List<String> paginateContent(String content, int pageSize) {
-        List<String> pages = new ArrayList<>();
-        if (content == null || content.isEmpty() || pageSize <= 0) {
-            return pages;
-        }
-
-        LOG.info("[分页] 开始分页，内容长度: " + content.length() + ", 页面大小: " + pageSize);
-
-        int textLength = content.length();
-        int startIndex = 0;
-
-        while (startIndex < textLength) {
-            int endIndex = Math.min(startIndex + pageSize, textLength);
-            
-            // If this is not the last chunk of text, try to find a natural break point.
-            if (endIndex < textLength) {
-                int breakPoint = -1;
-                // Look for the last newline character within the current page candidate.
-                for (int i = endIndex - 1; i >= startIndex; i--) {
-                    if (content.charAt(i) == '\n') {
-                        breakPoint = i + 1; // Break after the newline
-                        break;
-                    }
-                }
-
-                // If no newline, look for a sentence break, but don't look back too far.
-                if (breakPoint == -1) {
-                    for (int i = endIndex - 1; i >= startIndex && i > endIndex - 50; i--) { // Look back max 50 chars
-                        char c = content.charAt(i);
-                        if ("。！？.?!".indexOf(c) != -1) {
-                            breakPoint = i + 1;
-                            break;
-                        }
-                    }
-                }
-                
-                // If we found a good break point, adjust the end index.
-                if (breakPoint > startIndex) { // Ensure we are making progress
-                    endIndex = breakPoint;
-                }
-            }
-            
-            pages.add(content.substring(startIndex, endIndex));
-            startIndex = endIndex;
-        }
+        List<String> pages = PaginationHelper.paginate(content, pageSize);
 
         // Log page sizes for debugging
         if (!pages.isEmpty()) {
@@ -968,10 +819,10 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
                 if (i > 0) pageSizeInfo.append(", ");
                 pageSizeInfo.append("#").append(i + 1).append(": ").append(pages.get(i).length());
             }
-            LOG.info(pageSizeInfo.toString());
+            LOG.debug(pageSizeInfo.toString());
         }
 
-        LOG.info("[分页] 分页完成，总页数: " + pages.size());
+        LOG.debug("[分页] 分页完成，总页数: " + pages.size());
         return pages;
     }
 
@@ -1002,14 +853,14 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
         // 首先尝试使用Book中的cachedChapters
         List<NovelParser.Chapter> cachedChapters = currentBook.getCachedChapters();
         if (cachedChapters != null && !cachedChapters.isEmpty()) {
-            LOG.info("使用Book中的cachedChapters导航到最后一页，章节数量: " + cachedChapters.size());
+            LOG.debug("使用Book中的cachedChapters导航到最后一页，章节数量: " + cachedChapters.size());
             // 在UI线程上处理导航逻辑
             reactiveSchedulers.runOnUI(() -> processChapterNavigationToLastPageWithCachedChapters(project, cachedChapters, direction));
             return;
         }
 
         // 如果cachedChapters为空，则使用异步方式获取章节列表
-        LOG.info("Book中的cachedChapters为空，使用bookService.getChaptersSync获取章节列表");
+        LOG.debug("Book中的cachedChapters为空，使用bookService.getChaptersSync获取章节列表");
         Single.fromCallable(() -> bookService.getChaptersSync(currentBook.getId()))
             .subscribeOn(Schedulers.io()) // 在IO线程上执行
             .timeout(30, java.util.concurrent.TimeUnit.SECONDS) // 设置超时
@@ -1062,53 +913,7 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
 
         // 获取目标章节的信息
         ChapterService.EnhancedChapter targetChapter = chapters.get(targetIndex);
-        String targetChapterId = targetChapter.url();
-        String targetChapterTitle = targetChapter.title();
-        String targetChapterContent = targetChapter.getContent();
-
-        if (targetChapterContent == null || targetChapterContent.isEmpty()) {
-            LOG.warn("[通知栏模式] 目标章节内容为空: " + targetChapterId);
-            showError("导航失败", "目标章节内容为空");
-            return;
-        }
-
-        // 更新当前书籍、章节信息
-        this.currentChapterId = targetChapterId;
-        this.currentChapterTitle = targetChapterTitle;
-
-        // 分页并设置为最后一页
-        setCurrentChapterContent(targetChapterContent);
-        if (currentPages.isEmpty()) {
-            LOG.warn("[通知栏模式] 分页后内容为空，无法显示通知: " + targetChapterId);
-            showError("显示章节失败", "分页后内容为空");
-            return;
-        }
-        this.currentPageIndex = currentPages.size() - 1;
-
-        // 使用工具类构建通知内容并显示
-        String title = ProgressSaveHelper.buildNotificationTitle(currentBook.getTitle(), targetChapterTitle);
-        String notificationContent = ProgressSaveHelper.buildNotificationContent(
-            currentPages.get(currentPageIndex), currentPageIndex, currentPages.size(),
-            notificationSettings != null && notificationSettings.isShowReadingProgress());
-
-        showCurrentPageInternal(project, title, notificationContent);
-
-        // 使用工具类保存进度
-        ProgressSaveHelper.saveProgress(currentBook, targetChapterId, targetChapterTitle, currentPageIndex);
-
-        LOG.info("[通知栏模式] 导航到章节的最后一页: " + targetChapterId);
-
-        // 触发章节预加载
-        triggerChapterPreload(currentBook, targetIndex);
-
-        // 设置事件源并发布章节变更事件
-        if (chapterChangeManager != null) {
-            chapterChangeManager.setEventSource(ChapterChangeEventSource.NOTIFICATION_SERVICE);
-        }
-        ApplicationManager.getApplication().getMessageBus()
-                .syncPublisher(CurrentChapterNotifier.TOPIC)
-                .currentChapterChanged(currentBook, new NovelParser.Chapter(targetChapterTitle, targetChapterId));
-        LOG.info("[通知栏模式] 已发布章节变更事件: " + targetChapterTitle);
+        showNavigatedChapter(project, targetChapter.url(), targetChapter.title(), targetChapter.getContent(), targetIndex, true);
     }
 
     /**
@@ -1170,49 +975,8 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
             reactiveSchedulers.runOnUI(() -> showError("导航失败", "获取章节内容时出错: " + e.getMessage()));
         })
         .subscribe(content -> {
-            reactiveSchedulers.runOnUI(() -> {
-                if (content == null || content.isEmpty()) {
-                    LOG.warn("[通知栏模式] 目标章节内容为空: " + targetChapterId);
-                    showError("导航失败", "目标章节内容为空");
-                    return;
-                }
-
-                // 更新当前章节信息
-                currentChapterId = targetChapterId;
-                currentChapterTitle = targetChapterTitle;
-                setCurrentChapterContent(content);
-                if (currentPages.isEmpty()) {
-                    LOG.warn("[通知栏模式] 分页后内容为空，无法显示通知: " + targetChapterId);
-                    showError("显示章节失败", "分页后内容为空");
-                    return;
-                }
-                currentPageIndex = currentPages.size() - 1;
-
-                // 使用工具类构建通知内容并显示
-                String title = ProgressSaveHelper.buildNotificationTitle(currentBook.getTitle(), targetChapterTitle);
-                String notificationContent = ProgressSaveHelper.buildNotificationContent(
-                    currentPages.get(currentPageIndex), currentPageIndex, currentPages.size(),
-                    notificationSettings != null && notificationSettings.isShowReadingProgress());
-
-                showCurrentPageInternal(project, title, notificationContent);
-
-                // 使用工具类保存进度
-                ProgressSaveHelper.saveProgress(currentBook, targetChapterId, targetChapterTitle, currentPageIndex);
-
-                LOG.info("[通知栏模式] 使用cachedChapters导航到章节的最后一页: " + targetChapterId);
-
-                // 触发章节预加载
-                triggerChapterPreload(currentBook, targetIndex);
-
-                // 设置事件源并发布章节变更事件
-                if (chapterChangeManager != null) {
-                    chapterChangeManager.setEventSource(ChapterChangeEventSource.NOTIFICATION_SERVICE);
-                }
-                ApplicationManager.getApplication().getMessageBus()
-                        .syncPublisher(CurrentChapterNotifier.TOPIC)
-                        .currentChapterChanged(currentBook, targetChapter);
-                LOG.info("[通知栏模式] 已发布章节变更事件: " + targetChapter.title());
-            });
+            reactiveSchedulers.runOnUI(() ->
+                showNavigatedChapter(project, targetChapter, content, targetIndex, true));
         });
     }
 
@@ -1253,22 +1017,152 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
     }
 
     /**
+     * 处理章节导航后的统一展示流程（同步数据源专用）。
+     * <p>
+     * 由 4 组导航方法共享的"更新状态 → 分页 → 显示通知 → 保存进度 → 预加载 → 发布事件"流水线。
+     * 该重载在调用方（UI 线程）执行，适用于目标章节内容已直接可得的场景（EnhancedChapter）。
+     *
+     * @param project 当前项目
+     * @param targetChapterId 目标章节ID
+     * @param targetChapterTitle 目标章节标题
+     * @param targetChapterContent 目标章节内容
+     * @param targetIndex 目标章节索引
+     * @param navigateToLastPage 是否导航到最后一页（否则导航到第一页）
+     */
+    private void showNavigatedChapter(@NotNull Project project,
+                                      @NotNull String targetChapterId,
+                                      @NotNull String targetChapterTitle,
+                                      @NotNull String targetChapterContent,
+                                      int targetIndex,
+                                      boolean navigateToLastPage) {
+        if (targetChapterContent == null || targetChapterContent.isEmpty()) {
+            LOG.warn("[通知栏模式] 目标章节内容为空: " + targetChapterId);
+            showError("导航失败", "目标章节内容为空");
+            return;
+        }
+
+        // 更新当前书籍、章节信息
+        this.currentChapterId = targetChapterId;
+        this.currentChapterTitle = targetChapterTitle;
+
+        // 分页并定位到目标页
+        setCurrentChapterContent(targetChapterContent);
+        if (currentPages.isEmpty()) {
+            LOG.warn("[通知栏模式] 分页后内容为空，无法显示通知: " + targetChapterId);
+            showError("显示章节失败", "分页后内容为空");
+            return;
+        }
+        this.currentPageIndex = navigateToLastPage ? currentPages.size() - 1 : 0;
+
+        // 使用工具类构建通知内容并显示
+        String title = ProgressSaveHelper.buildNotificationTitle(currentBook.getTitle(), targetChapterTitle);
+        String notificationContent = ProgressSaveHelper.buildNotificationContent(
+            currentPages.get(currentPageIndex), currentPageIndex, currentPages.size(),
+            notificationSettings != null && notificationSettings.isShowReadingProgress());
+
+        showCurrentPageInternal(project, title, notificationContent);
+
+        // 使用工具类保存进度
+        ProgressSaveHelper.saveProgress(currentBook, targetChapterId, targetChapterTitle, currentPageIndex);
+
+        LOG.info("[通知栏模式] 导航到章节: " + targetChapterId + (navigateToLastPage ? " (最后一页)" : ""));
+
+        // 触发章节预加载
+        triggerChapterPreload(currentBook, targetIndex);
+
+        // 设置事件源并发布章节变更事件
+        if (chapterChangeManager != null) {
+            chapterChangeManager.setEventSource(ChapterChangeEventSource.NOTIFICATION_SERVICE);
+        }
+        ApplicationManager.getApplication().getMessageBus()
+                .syncPublisher(CurrentChapterNotifier.TOPIC)
+                .currentChapterChanged(currentBook, new NovelParser.Chapter(targetChapterTitle, targetChapterId));
+        LOG.info("[通知栏模式] 已发布章节变更事件: " + targetChapterTitle);
+    }
+
+    /**
+     * 处理章节导航后的统一展示流程（异步数据源专用）。
+     * <p>
+     * 与 {@link #showNavigatedChapter(Project, String, String, String, int, boolean)} 相同，
+     * 但它在异步订阅回调中执行，目标章节以 {@link Chapter} 对象传入（内容需已异步获取）。
+     * 与同步重载的唯一行为差异是发布事件时使用原始 Chapter 对象（保留 url/title 字段）。
+     *
+     * @param project 当前项目
+     * @param targetChapter 目标章节（内容已获取）
+     * @param content 目标章节内容
+     * @param targetIndex 目标章节索引
+     * @param navigateToLastPage 是否导航到最后一页
+     */
+    private void showNavigatedChapter(@NotNull Project project,
+                                      @NotNull NovelParser.Chapter targetChapter,
+                                      @NotNull String content,
+                                      int targetIndex,
+                                      boolean navigateToLastPage) {
+        String targetChapterId = targetChapter.url();
+        String targetChapterTitle = targetChapter.title();
+
+        if (content == null || content.isEmpty()) {
+            LOG.warn("[通知栏模式] 目标章节内容为空: " + targetChapterId);
+            showError("导航失败", "目标章节内容为空");
+            return;
+        }
+
+        // 更新当前章节信息
+        currentChapterId = targetChapterId;
+        currentChapterTitle = targetChapterTitle;
+
+        // 分页并定位到目标页
+        setCurrentChapterContent(content);
+        if (currentPages.isEmpty()) {
+            LOG.warn("[通知栏模式] 分页后内容为空，无法显示通知: " + targetChapterId);
+            showError("显示章节失败", "分页后内容为空");
+            return;
+        }
+        currentPageIndex = navigateToLastPage ? currentPages.size() - 1 : 0;
+
+        // 使用工具类构建通知内容并显示
+        String title = ProgressSaveHelper.buildNotificationTitle(currentBook.getTitle(), targetChapterTitle);
+        String notificationContent = ProgressSaveHelper.buildNotificationContent(
+            currentPages.get(currentPageIndex), currentPageIndex, currentPages.size(),
+            notificationSettings != null && notificationSettings.isShowReadingProgress());
+
+        showCurrentPageInternal(project, title, notificationContent);
+
+        // 使用工具类保存进度
+        ProgressSaveHelper.saveProgress(currentBook, targetChapterId, targetChapterTitle, currentPageIndex);
+
+        LOG.info("[通知栏模式] 使用cachedChapters导航到章节" + (navigateToLastPage ? "的最后一页" : "") + ": " + targetChapterId);
+
+        // 触发章节预加载
+        triggerChapterPreload(currentBook, targetIndex);
+
+        // 设置事件源并发布章节变更事件
+        if (chapterChangeManager != null) {
+            chapterChangeManager.setEventSource(ChapterChangeEventSource.NOTIFICATION_SERVICE);
+        }
+        ApplicationManager.getApplication().getMessageBus()
+                .syncPublisher(CurrentChapterNotifier.TOPIC)
+                .currentChapterChanged(currentBook, targetChapter);
+        LOG.info("[通知栏模式] 已发布章节变更事件: " + targetChapter.title());
+    }
+
+    /**
      * 关闭当前通知
      * 注意：只关闭通知，不重置其他状态（如 currentBook、currentChapterId 等）
      */
     private void closeCurrentNotificationInternal() {
-        LOG.info("[通知栏模式] 关闭当前通知，当前页索引: " + currentPageIndex + ", 总页数: " + currentPages.size());
+        LOG.debug("[通知栏模式] 关闭当前通知，当前页索引: " + currentPageIndex + ", 总页数: " + currentPages.size());
 
         Notification oldNotification = currentNotificationRef.getAndSet(null);
         if (oldNotification != null && !oldNotification.isExpired()) {
             try {
                 oldNotification.expire();
-                LOG.info("[通知栏模式] 成功关闭通知");
+                LOG.debug("[通知栏模式] 成功关闭通知");
             } catch (Exception e) {
                 LOG.error("[通知栏模式] 关闭通知时出错: " + e.getMessage(), e);
             }
         } else {
-            LOG.info("[通知栏模式] 没有通知需要关闭或通知已过期");
+            LOG.debug("[通知栏模式] 没有通知需要关闭或通知已过期");
         }
 
         // 不重置其他状态，以便在显示新通知时保持阅读进度

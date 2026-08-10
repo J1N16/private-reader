@@ -16,7 +16,6 @@ import com.intellij.ui.components.JBList;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.AsyncProcessIcon;
-import com.lv.tool.privatereader.async.ReactiveTaskManager;
 import com.lv.tool.privatereader.config.PrivateReaderConfig;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.parser.NovelParser;
@@ -24,6 +23,7 @@ import com.lv.tool.privatereader.repository.BookRepository;
 import com.lv.tool.privatereader.repository.ReadingProgressRepository;
 import com.lv.tool.privatereader.service.BookService;
 import com.lv.tool.privatereader.service.NotificationService;
+import com.lv.tool.privatereader.storage.cache.ReactiveChapterPreloader;
 import com.lv.tool.privatereader.ui.ReaderPanel;
 import com.lv.tool.privatereader.ui.ReaderToolWindowFactory;
 import com.lv.tool.privatereader.ui.topics.BookshelfTopics;
@@ -36,6 +36,7 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
@@ -48,6 +49,7 @@ public class BookshelfDialog extends DialogWrapper {
     private final BookService bookService;
     private final BookRepository bookRepository;
     private final ReadingProgressRepository readingProgressRepository;
+    private final ReactiveChapterPreloader chapterPreloader;
     private JPanel mainPanel;
     private JComboBox<String> sortComboBox;
     private AsyncProcessIcon loadingIcon;
@@ -62,6 +64,7 @@ public class BookshelfDialog extends DialogWrapper {
         // Get repositories directly using ApplicationManager
         this.bookRepository = ApplicationManager.getApplication().getService(BookRepository.class);
         this.readingProgressRepository = ApplicationManager.getApplication().getService(ReadingProgressRepository.class);
+        this.chapterPreloader = ApplicationManager.getApplication().getService(ReactiveChapterPreloader.class);
 
         if (this.bookRepository == null || this.readingProgressRepository == null) {
             LOG.error("Failed to get required repository services (BookRepository or ReadingProgressRepository).");
@@ -218,8 +221,10 @@ public class BookshelfDialog extends DialogWrapper {
 
                 if (result == Messages.YES) {
                     try {
-                        ReactiveTaskManager taskManager = ReactiveTaskManager.getInstance();
-                        taskManager.cancelTasksByPrefix("preload-chapters-" + selectedBook.getId());
+                        // 停止该书籍的章节预加载任务，避免残留后台任务
+                        if (chapterPreloader != null) {
+                            chapterPreloader.stopPreload(selectedBook.getId());
+                        }
                         removeBook(selectedBook);
                     } catch (Exception ex) {
                         LOG.error("移除书籍失败", ex);
@@ -327,81 +332,62 @@ public class BookshelfDialog extends DialogWrapper {
         // 禁用确定按钮，防止重复点击
         getOKAction().setEnabled(false);
 
-        // 创建一个标志，用于跟踪操作是否已完成
-        final AtomicBoolean operationCompleted = new AtomicBoolean(false);
-
         // 在后台线程执行打开书籍操作
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
-            try {
-                // 获取ReaderPanel实例
-                ReaderPanel panel = ReaderToolWindowFactory.findPanel(project);
-                if (panel != null) {
-                    // 在EDT线程上执行UI操作
-                    SwingUtilities.invokeLater(() -> {
-                        try {
-                            // 确保工具窗口可见
-                            ToolWindow toolWindow = ToolWindowManager.getInstance(project).getToolWindow("PrivateReader");
-                            if (toolWindow != null) {
-                                toolWindow.show(null);
-                            }
-
-                            // 选择书籍并加载进度
-                            panel.selectBookAndLoadProgress(selectedBook);
-
-                            // 标记操作已完成
-                            operationCompleted.set(true);
-
-                            // 关闭对话框
-                            SwingUtilities.invokeLater(() -> {
-                                hideLoading();
-                                getOKAction().setEnabled(true);
-                                super.doOKAction();
-                            });
-                        } catch (Exception ex) {
-                            LOG.error("打开书籍时出错", ex);
-                            // 在EDT线程上显示错误消息
-                            SwingUtilities.invokeLater(() -> {
-                                hideLoading();
-                                getOKAction().setEnabled(true);
-                                ApplicationManager.getApplication().getService(NotificationService.class).showError("错误", "打开书籍时出错: " + ex.getMessage());
-                            });
-                        }
-                    });
-                } else {
-                    // 在EDT线程上显示错误消息
-                    SwingUtilities.invokeLater(() -> {
-                        hideLoading();
-                        getOKAction().setEnabled(true);
-                        Messages.showWarningDialog(project, "阅读器面板未初始化", "错误");
-                    });
-                }
-            } catch (Exception ex) {
-                LOG.error("打开书籍时出错", ex);
-                // 在EDT线程上显示错误消息
+            // 获取ReaderPanel实例（后台线程读取，无需EDT）
+            ReaderPanel panel = ReaderToolWindowFactory.findPanel(project);
+            if (panel == null) {
                 SwingUtilities.invokeLater(() -> {
                     hideLoading();
                     getOKAction().setEnabled(true);
-                    ApplicationManager.getApplication().getService(NotificationService.class).showError("错误", "打开书籍时出错: " + ex.getMessage());
+                    Messages.showWarningDialog(project, "阅读器面板未初始化", "错误");
                 });
+                return;
             }
 
-            // 添加超时处理，防止操作无限期阻塞
-            try {
-                // 等待最多5秒钟
-                for (int i = 0; i < 50 && !operationCompleted.get(); i++) {
-                    Thread.sleep(100);
-                }
+            // 将UI操作派发到EDT执行，避免阻塞后台线程。future 在 EDT 真正完成后才完成，
+            // 后台线程通过带超时的 get() 等待，超时由超时保护兜底，不再轮询。
+            CompletableFuture<Void> uiFuture = new CompletableFuture<>();
+            SwingUtilities.invokeLater(() -> {
+                try {
+                    // 确保工具窗口可见
+                    ToolWindow toolWindow = ToolWindowManager.getInstance(project).getToolWindow("PrivateReader");
+                    if (toolWindow != null) {
+                        toolWindow.show(null);
+                    }
 
-                // 如果操作仍未完成，显示超时消息
-                if (!operationCompleted.get()) {
-                    SwingUtilities.invokeLater(() -> {
-                        hideLoading();
-                        getOKAction().setEnabled(true);
-                        Messages.showWarningDialog(project, "打开书籍操作超时，请稍后再试", "超时");
-                    });
+                    // 选择书籍并加载进度
+                    panel.selectBookAndLoadProgress(selectedBook);
+
+                    // 关闭对话框
+                    hideLoading();
+                    getOKAction().setEnabled(true);
+                    super.doOKAction();
+
+                    uiFuture.complete(null);
+                } catch (Exception ex) {
+                    LOG.error("打开书籍时出错", ex);
+                    // 在EDT线程上显示错误消息
+                    hideLoading();
+                    getOKAction().setEnabled(true);
+                    ApplicationManager.getApplication().getService(NotificationService.class).showError("错误", "打开书籍时出错: " + ex.getMessage());
+                    uiFuture.completeExceptionally(ex);
                 }
-            } catch (InterruptedException ex) {
-                LOG.error("等待打开书籍操作完成时被中断", ex);
+            });
+
+            // 超时保护：防止 selectBookAndLoadProgress 内部无限阻塞导致对话框无法关闭
+            try {
+                uiFuture.get(5, TimeUnit.SECONDS);
+            } catch (java.util.concurrent.TimeoutException te) {
+                LOG.warn("打开书籍操作超时，对话框将被关闭", te);
+                SwingUtilities.invokeLater(() -> {
+                    hideLoading();
+                    getOKAction().setEnabled(true);
+                    Messages.showWarningDialog(project, "打开书籍操作超时，请稍后再试", "超时");
+                });
+            } catch (Exception e) {
+                // 失败时 EDT 已显示错误通知，这里仅记录
+                LOG.debug("打开书籍操作未完成", e);
             }
         });
     }

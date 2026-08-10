@@ -2,6 +2,7 @@ package com.lv.tool.privatereader.repository.impl;
 
 import com.intellij.openapi.diagnostic.Logger;
 import com.lv.tool.privatereader.repository.ReactiveChapterCacheRepository;
+import com.lv.tool.privatereader.repository.StorageRepository;
 import com.lv.tool.privatereader.settings.CacheSettings;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Maybe;
@@ -56,8 +57,9 @@ public class ReactiveChapterCacheRepositoryImpl implements ReactiveChapterCacheR
     }
 
     private String initCacheDir() {
-        String userHome = System.getProperty("user.home");
-        String cacheDirPath = Paths.get(userHome, ".privatereader", CACHE_DIR_NAME).toString();
+        // 优先使用统一存储仓库（StorageRepository）管理的缓存目录，避免路径不一致
+        String baseCachePath = getBaseCachePath();
+        String cacheDirPath = Paths.get(baseCachePath, CACHE_DIR_NAME).toString();
 
         try {
             Files.createDirectories(Paths.get(cacheDirPath));
@@ -66,7 +68,58 @@ public class ReactiveChapterCacheRepositoryImpl implements ReactiveChapterCacheR
             LOG.error("创建缓存目录失败: " + cacheDirPath, e);
         }
 
+        // 一次性迁移旧版本硬编码的缓存目录（~/.privatereader/chapter_cache）
+        migrateLegacyCacheDir(cacheDirPath);
+
         return cacheDirPath;
+    }
+
+    /**
+     * 获取缓存根路径。
+     * 优先使用 StorageRepository 统一管理的缓存目录，失败时回退到与 StorageManager 一致的默认路径。
+     */
+    private String getBaseCachePath() {
+        try {
+            StorageRepository storageRepository = com.intellij.openapi.application.ApplicationManager.getApplication().getService(StorageRepository.class);
+            if (storageRepository != null) {
+                return storageRepository.getCachePath();
+            }
+        } catch (Exception e) {
+            LOG.warn("获取 StorageRepository 缓存路径失败，使用默认路径", e);
+        }
+        return Paths.get(System.getProperty("user.home"), ".private-reader", "cache").toString();
+    }
+
+    /**
+     * 将旧版本（2.5.1 之前）硬编码的缓存目录 ~/.privatereader/chapter_cache
+     * 中的缓存整体迁移到统一缓存目录，避免路径不一致导致缓存读写失效。
+     */
+    private void migrateLegacyCacheDir(String newCacheDirPath) {
+        Path legacyCachePath = Paths.get(System.getProperty("user.home"), ".privatereader", CACHE_DIR_NAME);
+        try {
+            if (!Files.isDirectory(legacyCachePath)) {
+                return;
+            }
+
+            Path newCachePath = Paths.get(newCacheDirPath);
+            try (Stream<Path> entries = Files.list(legacyCachePath)) {
+                entries.forEach(entry -> {
+                    try {
+                        Files.move(entry, newCachePath.resolve(entry.getFileName()),
+                                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    } catch (IOException e) {
+                        LOG.warn("迁移旧缓存目录项失败: " + entry + ", 错误: " + e.getMessage());
+                    }
+                });
+            }
+            LOG.info("已迁移旧缓存目录: " + legacyCachePath + " -> " + newCachePath);
+
+            // 迁移完成后删除已清空的旧缓存目录及其父目录
+            Files.deleteIfExists(legacyCachePath);
+            Files.deleteIfExists(legacyCachePath.getParent());
+        } catch (IOException e) {
+            LOG.warn("迁移旧缓存目录失败: " + e.getMessage());
+        }
     }
 
     private void scheduleCleanupTask() {

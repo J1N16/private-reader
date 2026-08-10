@@ -24,6 +24,7 @@ import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 public class ChapterListDialog extends DialogWrapper {
@@ -371,16 +372,10 @@ public class ChapterListDialog extends DialogWrapper {
                         retryCount++;
                         LOG.info("尝试重新加载章节列表：书籍=" + book.getTitle() + ", 重试次数=" + retryCount);
 
-                        // 使用SwingUtilities.invokeLater确保在EDT线程上执行
-                        javax.swing.SwingUtilities.invokeLater(() -> {
-                            try {
-                                // 等待一段时间再重试
-                                Thread.sleep(1000);
-                            } catch (InterruptedException e) {
-                                Thread.currentThread().interrupt();
-                            }
-                            loadChapters();
-                        });
+                        // 在后台线程延时1秒后重试，避免在EDT线程上sleep阻塞界面
+                        CompletableFuture
+                                .delayedExecutor(1, TimeUnit.SECONDS)
+                                .execute(this::loadChapters);
                         return;
                     }
 

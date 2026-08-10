@@ -113,7 +113,4 @@ public interface NotificationService {
     Single<Notification> showError(@NotNull String title, @NotNull String message);
     Single<Notification> showInfo(@NotNull String title, @NotNull String message);
     Completable closeAllNotificationsReactive();
-    Single<Notification> showPrevPageReactive();
-    Single<Notification> showNextPageReactive();
-    Single<Notification> navigateChapterReactive(int direction);
 }

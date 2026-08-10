@@ -18,10 +18,12 @@ import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import io.reactivex.rxjava3.subjects.BehaviorSubject;
 import io.reactivex.rxjava3.subjects.PublishSubject;
+import io.reactivex.rxjava3.subjects.Subject;
 
 import java.util.Comparator;
 import java.util.List;
 import java.util.function.BiConsumer;
+import java.util.function.UnaryOperator;
 
 import io.reactivex.rxjava3.core.Single;
 
@@ -36,7 +38,9 @@ public class ReaderViewModel implements Disposable {
     private final BiConsumer<Book, NovelParser.Chapter> chapterChangePublisher;
     private final CompositeDisposable disposables = new CompositeDisposable();
 
-    private final PublishSubject<IReaderIntent> intentSubject = PublishSubject.create();
+    // intentSubject 通过 toSerialized() 保证多线程 onNext 的顺序性，避免并发发射竞态
+    private final Subject<IReaderIntent> intentSubject = PublishSubject.<IReaderIntent>create().toSerialized();
+    // BehaviorSubject 内部已保证线程安全；所有"读-改-写"状态更新统一走 updateState() 保证原子性
     private final BehaviorSubject<ReaderUiState> uiState = BehaviorSubject.createDefault(ReaderUiState.initial());
 
     public ReaderViewModel(Project project) {
@@ -84,6 +88,15 @@ public class ReaderViewModel implements Disposable {
         intentSubject.onNext(intent);
     }
 
+    /**
+     * 原子地更新 UI 状态。
+     * BehaviorSubject 内部线程安全，但"读-改-写"（getValue() 后 toBuilder 再 onNext）若跨线程并发
+     * 可能丢失更新，因此统一收敛到本方法，通过 synchronized 保证读-改-写原子性。
+     */
+    private synchronized void updateState(UnaryOperator<ReaderUiState> transformer) {
+        uiState.onNext(transformer.apply(uiState.getValue()));
+    }
+
     private void handleIntent(IReaderIntent intent) {
         if (intent instanceof IReaderIntent.LoadInitialData) {
             loadInitialData();
@@ -124,12 +137,10 @@ public class ReaderViewModel implements Disposable {
             return;
         }
 
-        uiState.onNext(
-                currentState.toBuilder()
-                        .selectedChapterId(chapter.url())
-                        .isLoadingContent(true)
-                        .build()
-        );
+        updateState(state -> state.toBuilder()
+                .selectedChapterId(chapter.url())
+                .isLoadingContent(true)
+                .build());
 
         disposables.add(
                 chapterService.getChapterContent(book, chapter.url())
@@ -137,13 +148,11 @@ public class ReaderViewModel implements Disposable {
                         .subscribeOn(Schedulers.io())
                         .subscribe(
                                 content -> {
-                                    uiState.onNext(
-                                            uiState.getValue().toBuilder()
-                                                    .isLoadingContent(false)
-                                                    .content(content)
-                                                    .currentChapterTitle(chapter.title())
-                                                    .build()
-                                    );
+                                    updateState(state -> state.toBuilder()
+                                            .isLoadingContent(false)
+                                            .content(content)
+                                            .currentChapterTitle(chapter.title())
+                                            .build());
                                     chapterChangePublisher.accept(book, chapter);
                                     LOG.debug("Published CurrentChapterNotifier event for: " + chapter.title());
 
@@ -153,11 +162,9 @@ public class ReaderViewModel implements Disposable {
                                 error -> {
                                     LOG.warn("Failed to load content for chapter: " + chapter.url(), error);
                                     notificationService.showError("加载章节内容失败", error.getMessage());
-                                    uiState.onNext(
-                                            uiState.getValue().toBuilder()
-                                                    .isLoadingContent(false)
-                                                    .build()
-                                    );
+                                    updateState(state -> state.toBuilder()
+                                            .isLoadingContent(false)
+                                            .build());
                                 }
                         )
         );
@@ -200,17 +207,14 @@ public class ReaderViewModel implements Disposable {
     }
 
     private void loadChaptersForBook(String bookId, String chapterIdToRestore) {
-        ReaderUiState currentState = uiState.getValue();
-        uiState.onNext(
-            currentState.toBuilder()
+        updateState(state -> state.toBuilder()
                 .selectedBookId(bookId)
                 .isLoadingChapters(true)
-                .build()
-        );
+                .build());
 
         Book book = findBookInCurrentState(bookId);
         if (book == null) {
-            uiState.onNext(uiState.getValue().toBuilder().error("Selected book not found in state").isLoadingChapters(false).build());
+            updateState(state -> state.toBuilder().error("Selected book not found in state").isLoadingChapters(false).build());
             return;
         }
 
@@ -225,12 +229,10 @@ public class ReaderViewModel implements Disposable {
                         List<NovelParser.Chapter> chapters = pair.getValue();
                         String chapterIdToSelect = chapterIdToRestore != null ? chapterIdToRestore : latestBook.getLastReadChapterId();
 
-                        uiState.onNext(
-                            uiState.getValue().toBuilder()
+                        updateState(state -> state.toBuilder()
                                 .isLoadingChapters(false)
                                 .chapters(chapters)
-                                .build()
-                        );
+                                .build());
 
                         if (chapterIdToSelect != null && !chapterIdToSelect.isEmpty()) {
                             chapters.stream()
@@ -244,11 +246,9 @@ public class ReaderViewModel implements Disposable {
                     error -> {
                         LOG.error("Failed to load chapters for book: " + bookId, error);
                         notificationService.showError("加载章节列表失败", error.getMessage());
-                        uiState.onNext(
-                            uiState.getValue().toBuilder()
+                        updateState(state -> state.toBuilder()
                                 .isLoadingChapters(false)
-                                .build()
-                        );
+                                .build());
                     }
                 )
         );
@@ -262,7 +262,7 @@ public class ReaderViewModel implements Disposable {
     }
     
     private void loadInitialData() {
-        uiState.onNext(uiState.getValue().toBuilder().isLoadingBooks(true).build());
+        updateState(state -> state.toBuilder().isLoadingBooks(true).build());
         disposables.add(
             bookService.getAllBooks().toList()
                 .subscribeOn(Schedulers.io())
@@ -291,19 +291,17 @@ public class ReaderViewModel implements Disposable {
                 }, error -> {
                     LOG.error("Failed to load books", error);
                     notificationService.showError("加载书籍失败", error.getMessage());
-                    uiState.onNext(uiState.getValue().toBuilder().isLoadingBooks(false).build());
+                    updateState(state -> state.toBuilder().isLoadingBooks(false).build());
                 })
         );
     }
     
     private void updateInitialState(List<Book> books, String selectedBookId) {
-        uiState.onNext(
-            uiState.getValue().toBuilder()
+        updateState(state -> state.toBuilder()
                 .isLoadingBooks(false)
                 .books(books)
                 .selectedBookId(selectedBookId)
-                .build()
-        );
+                .build());
         if (selectedBookId != null) {
             loadChaptersForBook(selectedBookId, null);
         }
@@ -311,18 +309,18 @@ public class ReaderViewModel implements Disposable {
 
     private void searchBooks(String keyword) {
         LOG.info("Searching for books with keyword: " + keyword);
-        uiState.onNext(uiState.getValue().toBuilder().isLoadingBooks(true).build());
+        updateState(state -> state.toBuilder().isLoadingBooks(true).build());
         disposables.add(
             bookService.getAllBooks()
                 .filter(b -> matchesKeyword(b, keyword))
                 .toList()
                 .subscribeOn(Schedulers.io())
                 .subscribe(
-                    books -> uiState.onNext(uiState.getValue().toBuilder().isLoadingBooks(false).books(books).build()),
+                    books -> updateState(state -> state.toBuilder().isLoadingBooks(false).books(books).build()),
                     error -> {
                         LOG.error("Failed to search books", error);
                         notificationService.showError("搜索书籍失败", error.getMessage());
-                        uiState.onNext(uiState.getValue().toBuilder().isLoadingBooks(false).build());
+                        updateState(state -> state.toBuilder().isLoadingBooks(false).build());
                     }
                 )
         );
@@ -350,7 +348,7 @@ public class ReaderViewModel implements Disposable {
 
     private void addNewBook(String url) {
         LOG.info("Adding new book from url: " + url);
-        uiState.onNext(uiState.getValue().toBuilder().isLoadingBooks(true).build());
+        updateState(state -> state.toBuilder().isLoadingBooks(true).build());
         disposables.add(
             fetchBookInfo(url)
                 .subscribe(book -> {
@@ -362,18 +360,18 @@ public class ReaderViewModel implements Disposable {
                                     loadInitialData();
                                 } else {
                                     notificationService.showError("添加书籍失败", "无法添加书籍，请稍后再试。");
-                                    uiState.onNext(uiState.getValue().toBuilder().isLoadingBooks(false).build());
+                                    updateState(state -> state.toBuilder().isLoadingBooks(false).build());
                                 }
                             }, error -> {
                                 LOG.error("Failed to add book", error);
                                 notificationService.showError("添加书籍失败", error.getMessage());
-                                uiState.onNext(uiState.getValue().toBuilder().isLoadingBooks(false).build());
+                                updateState(state -> state.toBuilder().isLoadingBooks(false).build());
                             })
                     );
                 }, error -> {
                     LOG.error("Failed to fetch book info", error);
                     notificationService.showError("获取书籍信息失败", error.getMessage());
-                    uiState.onNext(uiState.getValue().toBuilder().isLoadingBooks(false).build());
+                    updateState(state -> state.toBuilder().isLoadingBooks(false).build());
                 })
         );
     }
@@ -396,10 +394,10 @@ public class ReaderViewModel implements Disposable {
         LOG.info("Deleting book with id: " + bookId);
         Book bookToDelete = findBookInCurrentState(bookId);
         if (bookToDelete == null) {
-            uiState.onNext(uiState.getValue().toBuilder().error("Cannot delete: book not found").build());
+            updateState(state -> state.toBuilder().error("Cannot delete: book not found").build());
             return;
         }
-        uiState.onNext(uiState.getValue().toBuilder().isLoadingBooks(true).build());
+        updateState(state -> state.toBuilder().isLoadingBooks(true).build());
         disposables.add(
             bookService.removeBook(bookToDelete)
                 .toObservable()
@@ -408,12 +406,12 @@ public class ReaderViewModel implements Disposable {
                         loadInitialData();
                     } else {
                         notificationService.showError("删除书籍失败", "无法删除书籍，请稍后再试。");
-                        uiState.onNext(uiState.getValue().toBuilder().isLoadingBooks(false).build());
+                        updateState(state -> state.toBuilder().isLoadingBooks(false).build());
                     }
                 }, error -> {
                     LOG.warn("Failed to delete book", error);
                     notificationService.showError("删除书籍失败", error.getMessage());
-                    uiState.onNext(uiState.getValue().toBuilder().isLoadingBooks(false).build());
+                    updateState(state -> state.toBuilder().isLoadingBooks(false).build());
                 })
         );
     }
@@ -447,22 +445,17 @@ public class ReaderViewModel implements Disposable {
                .subscribeOn(Schedulers.io())
                .subscribe(
                    chapters -> {
-                       ReaderUiState currentState = uiState.getValue();
-                       uiState.onNext(
-                           currentState.toBuilder()
+                       updateState(state -> state.toBuilder()
                                .selectedBookId(book.getId())
                                .chapters(chapters)
-                               .build()
-                       );
+                               .build());
                        loadChapterContent(book, chapter);
                    },
                    error -> {
                        LOG.error("Failed to load chapters during external change for book: " + book.getId(), error);
-                       uiState.onNext(
-                           uiState.getValue().toBuilder()
+                       updateState(state -> state.toBuilder()
                                .isLoadingChapters(false)
-                               .build()
-                       );
+                               .build());
                        notificationService.showError("加载章节列表失败", error.getMessage());
                    }
                )
