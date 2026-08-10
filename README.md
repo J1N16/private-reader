@@ -94,7 +94,7 @@
 
 ## 系统要求
 
-- IntelliJ IDEA 2024.1 或更高版本
+- IntelliJ IDEA 2026.1.x
 
 ## 问题反馈
 

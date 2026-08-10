@@ -19,17 +19,18 @@ repositories {
 
 dependencies {
     implementation 'org.jsoup:jsoup:1.22.2'
-    implementation 'org.xerial:sqlite-jdbc:3.53.1.0'
+    implementation 'org.xerial:sqlite-jdbc:3.53.2.1'
     implementation 'io.reactivex.rxjava3:rxjava:3.1.12'
     implementation 'com.google.code.gson:gson:2.14.0'
+    implementation 'com.google.guava:guava:33.6.0-jre'
 
     // IntelliJ Platform
     intellijPlatform {
-        intellijIdeaCommunity "2024.3"
+        intellijIdea "2026.1.4"
     }
 
     // Test dependencies
-    testImplementation platform('org.junit:junit-bom:6.1.0')
+    testImplementation platform('org.junit:junit-bom:6.1.3')
     testImplementation platform('org.mockito:mockito-bom:5.23.0')
     testImplementation 'org.junit.jupiter:junit-jupiter-api'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine'
@@ -46,7 +47,7 @@ intellijPlatform {
     instrumentCode = false
 
     patchPluginXml {
-        sinceBuild = '243'
+        sinceBuild = '261'
         changeNotes = """
               <h3>2.5.1 版本更新</h3>
               <ul>
@@ -65,13 +66,20 @@ intellijPlatform {
 }
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_21
-    targetCompatibility = JavaVersion.VERSION_21
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 21
 }
 
 wrapper {
-    gradleVersion = '9.5.1'
+    gradleVersion = '9.7.0'
     distributionType = Wrapper.DistributionType.BIN
+    distributionSha256Sum = '84fbba45c7f4c64abc77460e1c00f541e9f960e3c7ed2538f1ede19eacd873ae'
+    distributionUrl = 'https://mirrors.cloud.tencent.com/gradle/gradle-9.7.0-bin.zip'
 }
 
 // Add duplicate handling strategy for Jar tasks

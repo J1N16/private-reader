@@ -94,7 +94,7 @@ A lightweight novel reading plugin that supports content extraction from various
 
 ## System Requirements
 
-- IntelliJ IDEA 2024.1 or higher
+- IntelliJ IDEA 2026.1.x
 
 ## Feedback
 

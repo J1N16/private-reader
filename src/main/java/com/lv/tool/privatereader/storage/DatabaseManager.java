@@ -8,8 +8,6 @@ import com.google.gson.Gson;
 import com.google.gson.JsonSyntaxException;
 import com.intellij.ide.util.PropertiesComponent;
 import org.jetbrains.annotations.NotNull;
-import org.sqlite.SQLiteErrorCode;
-import org.sqlite.SQLiteException;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -19,6 +17,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import com.lv.tool.privatereader.model.Book;
@@ -131,25 +130,37 @@ public final class DatabaseManager implements Disposable {
      * 初始化数据库表结构（CREATE TABLE, ALTER TABLE）。
      */
     private void initializeDatabaseTableStructure() {
-        try (Connection conn = DriverManager.getConnection(dbUrl);
-             Statement stmt = conn.createStatement()) {
-
-            stmt.execute(CREATE_TABLE_SQL);
-            LOG.info("Ensured 'reading_progress' table exists.");
-
-            try {
-                stmt.execute(ADD_FINISHED_COLUMN_SQL);
-                LOG.info("Added 'is_finished' column to 'reading_progress' table (or it already existed).");
-            } catch (SQLiteException e) {
-                if (e.getErrorCode() == SQLiteErrorCode.SQLITE_ERROR.code && e.getMessage().contains("duplicate column name: is_finished")) {
-                    LOG.debug("'is_finished' column already exists.");
-                } else {
-                    throw e;
-                }
-            }
-
+        try (Connection connection = DriverManager.getConnection(dbUrl)) {
+            initializeDatabaseTableStructure(connection);
         } catch (SQLException e) {
             LOG.error("Failed to initialize database table 'reading_progress'.", e);
+        }
+    }
+
+    static void initializeDatabaseTableStructure(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute(CREATE_TABLE_SQL);
+            LOG.info("Ensured 'reading_progress' table exists.");
+
+            if (hasColumn(connection, "reading_progress", "is_finished")) {
+                LOG.debug("'is_finished' column already exists.");
+                return;
+            }
+
+            statement.execute(ADD_FINISHED_COLUMN_SQL);
+            LOG.info("Added 'is_finished' column to 'reading_progress' table.");
+        }
+    }
+
+    private static boolean hasColumn(Connection connection, String tableName, String columnName) throws SQLException {
+        try (Statement statement = connection.createStatement();
+             ResultSet resultSet = statement.executeQuery("PRAGMA table_info(" + tableName + ")")) {
+            while (resultSet.next()) {
+                if (columnName.equalsIgnoreCase(resultSet.getString("name"))) {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 

@@ -238,6 +238,8 @@ class ReaderViewModelTest {
         assertEquals("chapter-1", state.getSelectedChapterId());
         assertEquals("第一章", state.getCurrentChapterTitle());
         assertEquals("刷新后第一章正文", state.getContent());
+        verify(bookService, timeout(1000).times(2))
+                .saveReadingProgress(book, "chapter-1", "第一章", 0);
     }
 
     @Test
