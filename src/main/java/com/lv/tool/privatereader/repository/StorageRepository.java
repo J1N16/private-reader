@@ -80,23 +80,7 @@ public interface StorageRepository {
      * 清空所有存储
      */
     void clearAllStorage();
-    
-    /**
-     * 创建备份
-     * 
-     * @return 备份文件路径
-     */
-    @NotNull
-    String createBackup();
-    
-    /**
-     * 从备份恢复
-     * 
-     * @param backupFilePath 备份文件路径
-     * @return 是否恢复成功
-     */
-    boolean restoreFromBackup(String backupFilePath);
-    
+
     /**
      * 获取安全的文件名
      * 

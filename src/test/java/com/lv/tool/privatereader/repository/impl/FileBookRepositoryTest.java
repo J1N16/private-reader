@@ -206,16 +206,6 @@ class FileBookRepositoryTest {
         }
 
         @Override
-        public String createBackup() {
-            return getBackupPath();
-        }
-
-        @Override
-        public boolean restoreFromBackup(String backupFilePath) {
-            return false;
-        }
-
-        @Override
         public String getSafeFileName(String fileName) {
             return fileName;
         }

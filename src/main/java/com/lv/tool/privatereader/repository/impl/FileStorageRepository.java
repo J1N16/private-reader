@@ -128,23 +128,6 @@ public final class FileStorageRepository implements StorageRepository {
         }
     }
     
-    @Override
-    @NotNull
-    public String createBackup() {
-        String backupFileName = "backup_" + System.currentTimeMillis() + ".zip";
-        String backupFilePath = Path.of(getBackupPath(), backupFileName).toString();
-        
-        // TODO: 实现备份逻辑
-        
-        return backupFilePath;
-    }
-    
-    @Override
-    public boolean restoreFromBackup(String backupFilePath) {
-        // TODO: 实现恢复逻辑
-        return false;
-    }
-    
     /**
      * 删除目录内容
      */

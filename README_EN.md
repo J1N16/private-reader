@@ -12,7 +12,6 @@ A lightweight novel reading plugin that supports content extraction from various
   - Automatic chapter structure recognition
   - Smart filtering of ads and irrelevant content
   - Multi-source switching and comparison
-  - Automatic garbled text repair
 
 ### Reading Experience
 - Dual Reading Modes

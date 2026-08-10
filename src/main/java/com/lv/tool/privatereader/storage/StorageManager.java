@@ -168,17 +168,6 @@ public final class StorageManager {
     /**
      * 获取响应式章节缓存仓库
      * @return 响应式章节缓存仓库
-     * @deprecated 请使用 {@link #getReactiveChapterCacheRepository()} 代替
-     */
-    @Deprecated
-    @NotNull
-    public ReactiveChapterCacheRepository getChapterCacheManager() {
-        return com.intellij.openapi.application.ApplicationManager.getApplication().getService(ReactiveChapterCacheRepository.class);
-    }
-
-    /**
-     * 获取响应式章节缓存仓库
-     * @return 响应式章节缓存仓库
      */
     @NotNull
     public ReactiveChapterCacheRepository getReactiveChapterCacheRepository() {
@@ -285,7 +274,7 @@ public final class StorageManager {
             }
             
             // 删除所有缓存
-            getChapterCacheManager().clearAllCache();
+            getReactiveChapterCacheRepository().clearAllCache();
             
             // 删除所有目录内容
             deleteDirectoryContents(baseStoragePath.toFile());
@@ -297,30 +286,6 @@ public final class StorageManager {
         } catch (Exception e) {
             LOG.error("清理存储数据失败: " + e.getMessage(), e);
         }
-    }
-    
-    /**
-     * 创建数据备份
-     * @return 备份文件路径
-     */
-    @NotNull
-    public String createBackup() {
-        String timestamp = String.valueOf(System.currentTimeMillis());
-        Path backupFile = backupPath.resolve("backup-" + timestamp + ".zip");
-        
-        // TODO: 实现备份逻辑
-        
-        return backupFile.toString();
-    }
-    
-    /**
-     * 从备份恢复数据
-     * @param backupFilePath 备份文件路径
-     * @return 是否恢复成功
-     */
-    public boolean restoreFromBackup(String backupFilePath) {
-        // TODO: 实现恢复逻辑
-        return false;
     }
     
     /**

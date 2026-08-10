@@ -6,7 +6,6 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
 import com.lv.tool.privatereader.exception.PrivateReaderException;
-import com.lv.tool.privatereader.async.ReactiveSchedulers;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.parser.NovelParser;
 import com.lv.tool.privatereader.parser.NovelParser.Chapter;
@@ -31,7 +30,6 @@ public final class ChapterServiceImpl implements ChapterService {
     private static final Logger LOG = Logger.getInstance(ChapterServiceImpl.class);
     private ReactiveChapterCacheRepository chapterCacheRepository;
     private BookRepository bookRepository;
-    private final ReactiveSchedulers reactiveSchedulers;
 
     // 缓存相关 - 使用 Guava Cache 替代无限制的 ConcurrentHashMap
     // 书籍章节列表缓存：最多缓存 50 本书的章节列表，访问后 30 分钟过期
@@ -56,7 +54,6 @@ public final class ChapterServiceImpl implements ChapterService {
      */
     public ChapterServiceImpl() {
         LOG.info("初始化ChapterServiceImpl");
-        this.reactiveSchedulers = ReactiveSchedulers.getInstance();
         // 服务将在首次需要时异步初始化
     }
 

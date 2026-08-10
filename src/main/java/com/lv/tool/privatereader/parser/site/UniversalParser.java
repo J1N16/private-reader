@@ -60,11 +60,8 @@ public final class UniversalParser implements NovelParser {
         LOG.info("开始初始化解析器并加载网页: " + url);
         try {
             LOG.debug("尝试连接网址...");
-            // 使用系统属性设置代理
-            System.setProperty("http.proxyHost", "");
-            System.setProperty("http.proxyPort", "");
-            System.setProperty("https.proxyHost", "");
-            System.setProperty("https.proxyPort", "");
+            // 注：不再设置 System 全局代理属性。请求走 SafeHttpRequestExecutor（IntelliJ
+            // HttpRequests），由 IDE 自身的代理配置管理，避免污染 JVM 全局代理设置。
 
             // 使用安全的HTTP请求执行器，带有重试机制
             String htmlContent = SafeHttpRequestExecutor.executeGetRequest(url);
@@ -261,12 +258,12 @@ public final class UniversalParser implements NovelParser {
 
     private String parseChapterContentInternal(String chapterId) {
         try {
-            LOG.info("正在连接章节页面...");
+            LOG.debug("正在连接章节页面...");
 
             // 使用安全的HTTP请求执行器
             String html = SafeHttpRequestExecutor.executeGetRequest(chapterId);
 
-            LOG.info("成功获取章节页面内容，长度: " + html.length());
+            LOG.debug("成功获取章节页面内容，长度: " + html.length());
 
             // 优化：只使用UTF-8编码，避免重复解析
             String content = null;
@@ -284,7 +281,7 @@ public final class UniversalParser implements NovelParser {
             }
 
             if (content != null && !content.isEmpty()) {
-                LOG.info("成功解析章节内容，使用编码: UTF-8");
+                LOG.debug("成功解析章节内容，使用编码: UTF-8");
             }
 
             if (content == null || content.isEmpty()) {
@@ -413,95 +410,4 @@ public final class UniversalParser implements NovelParser {
         return null;
     }
 
-    /**
-     * 计算文本的乱码评分
-     * 分数越低表示乱码可能性越小
-     */
-    private int calculateGarbageScore(String text) {
-        if (text == null || text.isEmpty()) {
-            return Integer.MAX_VALUE;
-        }
-
-        int score = 0;
-        // 统计不可打印字符
-        for (char c : text.toCharArray()) {
-            if (!Character.isLetterOrDigit(c) && !Character.isWhitespace(c) && !isPunctuationMark(c)) {
-                score++;
-            }
-        }
-
-        // 检查中文字符比例
-        long chineseCount = text.chars()
-            .filter(c -> Character.UnicodeScript.of(c) == Character.UnicodeScript.HAN)
-            .count();
-        double chineseRatio = (double) chineseCount / text.length();
-        if (chineseRatio < 0.5) {  // 如果中文字符比例过低
-            score += 1000;
-        }
-
-        // 检查常见乱码特征
-        if (text.contains("\uFFFD")) {  // Unicode替换字符，表示无法解码
-            score += 500;
-        }
-        if (text.contains("□")) {
-            score += 200;
-        }
-        if (text.contains("▯")) {
-            score += 200;
-        }
-        // 检测其他常见乱码字符
-        if (text.contains("锟斤拷") || text.contains("烫烫烫") || text.contains("屯屯屯")) {
-            score += 300;
-        }
-
-        return score;
-    }
-
-    /**
-     * 判断是否为标点符号
-     */
-    private boolean isPunctuationMark(char c) {
-        // 使用Character类的内置方法检测标点符号
-        if (Character.getType(c) == Character.DASH_PUNCTUATION
-            || Character.getType(c) == Character.START_PUNCTUATION
-            || Character.getType(c) == Character.END_PUNCTUATION
-            || Character.getType(c) == Character.CONNECTOR_PUNCTUATION
-            || Character.getType(c) == Character.OTHER_PUNCTUATION
-            || Character.getType(c) == Character.INITIAL_QUOTE_PUNCTUATION
-            || Character.getType(c) == Character.FINAL_QUOTE_PUNCTUATION) {
-            return true;
-        }
-
-        // 额外检查一些可能未被上述方法捕获的中文标点符号
-        int[] punctuations = {
-            0x3002, // 。
-            0xFF0C, // ，
-            0xFF01, // ！
-            0xFF1F, // ？
-            0xFF1B, // ；
-            0xFF1A, // ：
-            0x201C, // "
-            0x201D, // "
-            0x2018, // '
-            0x2019, // '
-            0xFF08, // （
-            0xFF09, // ）
-            0x3010, // 【
-            0x3011, // 】
-            0x300A, // 《
-            0x300B, // 》
-            0x3001, // 、
-            0xFF5E, // ～
-            0x2026, // …
-            0x2014, // —
-            0x2015  // ―
-        };
-
-        for (int p : punctuations) {
-            if (c == p) {
-                return true;
-            }
-        }
-        return false;
-    }
 }

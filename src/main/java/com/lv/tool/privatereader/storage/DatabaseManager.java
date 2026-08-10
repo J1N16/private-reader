@@ -33,8 +33,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Implemented as a Application Level Service.
  * Includes one-time migration logic from old JSON format.
  *
- * 优化：使用静态驱动加载 + 缓存连接，避免每次调用都创建新连接。
- * SQLite 是单写入者数据库，单连接 + 同步锁即可满足需求。
+ * 优化说明（2026-08-10）：
+ * 连接管理采用"即用即开"的短连接方案，而非连接池或共享单连接：
+ * - 本地 SQLite 建连是内存级操作（几十微秒），池化/复用的收益约等于零；
+ * - 短连接天然避免锁平衡问题（无需动态代理释放锁）、无死锁/锁泄漏风险；
+ * - SQLite 单写入者模型下，连接池的多个物理连接反而会触发 "database is locked"。
+ * 进度读写频率极低（阅读进度、标记完成等），短连接开销完全可接受。
  */
 @Service(Service.Level.APP)
 public final class DatabaseManager implements Disposable {
@@ -84,8 +88,11 @@ public final class DatabaseManager implements Disposable {
     }
 
     /**
-     * 获取 SQLite 数据库连接。
-     * 调用方负责关闭返回的连接。
+     * 获取一个可用的 SQLite 数据库连接。
+     * <p>
+     * 采用即用即开方案：每次调用创建新连接，调用方通过 try-with-resources 关闭。
+     * 本地 SQLite 建连开销极小（几十微秒），且 SQLite 单写入者模型天然串行化写操作，
+     * 无需引入连接池或共享连接 + 排他锁（后者还要依赖动态代理释放锁，易出错）。
      *
      * @return A valid Connection object.
      * @throws SQLException if a database access error occurs.
@@ -99,6 +106,8 @@ public final class DatabaseManager implements Disposable {
 
     @Override
     public void dispose() {
+        // 短连接方案下无共享连接需要关闭。保持空实现以符合 Disposable 约定，
+        // 关闭逻辑由各调用方的 try-with-resources 完成。
     }
 
     /**
