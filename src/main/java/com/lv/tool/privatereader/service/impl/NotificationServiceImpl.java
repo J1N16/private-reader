@@ -25,6 +25,7 @@ import com.lv.tool.privatereader.service.BookService;
 import com.lv.tool.privatereader.service.ChapterService;
 import com.lv.tool.privatereader.service.NotificationService;
 import com.lv.tool.privatereader.service.impl.notification.ChapterNavigationHelper;
+import com.lv.tool.privatereader.service.impl.notification.ChapterPaginationCache;
 import com.lv.tool.privatereader.service.impl.notification.PaginationHelper;
 import com.lv.tool.privatereader.service.impl.notification.ProgressSaveHelper;
 import com.lv.tool.privatereader.settings.NotificationReaderSettings;
@@ -78,6 +79,8 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
     private volatile Book currentBook;
     private volatile String currentChapterId;
     private volatile String currentChapterTitle;
+    // 分页缓存：内容与 pageSize 未变化时复用分页结果，避免整章重复分页（V3 P3-3）
+    private final ChapterPaginationCache paginationCache = new ChapterPaginationCache();
 
     // 加载状态标志
     private final AtomicBoolean isLoadingChapter = new AtomicBoolean(false);
@@ -130,15 +133,15 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
         LOG.debug("NotificationServiceImpl: 设置当前章节内容，使用页面大小: " + pageSize +
                  ", notificationSettings 是否为 null: " + (notificationSettings == null));
 
-        // 记录当前页码索引
-        int oldPageIndex = this.currentPageIndex;
-        LOG.debug(String.format("[页码调试] setCurrentChapterContent 调用前的页码索引: %d", oldPageIndex));
+        // 分页缓存：内容与 pageSize 均未变化时复用上次分页结果，避免同一章节内容被重复整章分页
+        List<String> pages = paginationCache.paginate(content, pageSize);
+        boolean reused = pages == this.currentPages;
+        this.currentPages = pages;
+        if (!reused) {
+            this.currentPageIndex = 0; // Reset to first page only when pagination actually changed
+        }
 
-        this.currentPages = paginateContent(content, pageSize);
-        this.currentPageIndex = 0; // Reset to first page
-
-        LOG.debug(String.format("[页码调试] setCurrentChapterContent 调用后的页码索引: %d (重置为0)", this.currentPageIndex));
-        LOG.debug("NotificationServiceImpl: 分页完成，总页数: " + this.currentPages.size());
+        LOG.debug("NotificationServiceImpl: 分页完成，总页数: " + this.currentPages.size() + (reused ? "（复用缓存）" : ""));
     }
 
     @Override
@@ -469,14 +472,14 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
         List<Chapter> cachedChapters = currentBook.getCachedChapters();
         if (cachedChapters != null && !cachedChapters.isEmpty()) {
             LOG.debug("使用Book中的cachedChapters进行导航，章节数量: " + cachedChapters.size());
-            reactiveSchedulers.runOnUI(() -> processChapterNavigationWithCachedChapters(project, cachedChapters, direction));
+            reactiveSchedulers.runOnUI(() -> processChapterNavigationWithCachedChapters(project, cachedChapters, direction, false));
         } else {
             LOG.debug("Book中的cachedChapters为空，使用bookService.getChaptersSync获取章节列表");
             Single.fromCallable(() -> bookService.getChaptersSync(currentBook.getId()))
                 .subscribeOn(Schedulers.io())
                 .timeout(30, java.util.concurrent.TimeUnit.SECONDS)
                 .doOnError(e -> reactiveSchedulers.runOnUI(() -> showError("导航失败", "获取章节列表时出错: " + e.getMessage())))
-                .subscribe(chapters -> reactiveSchedulers.runOnUI(() -> processChapterNavigation(project, chapters, direction)));
+                .subscribe(chapters -> reactiveSchedulers.runOnUI(() -> processChapterNavigation(project, chapters, direction, false)));
         }
     }
 
@@ -534,16 +537,44 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
     }
 
     /**
-     * 处理章节导航逻辑
-     * 在UI线程上执行
+     * 解析导航目标索引：查找当前章节索引 → 验证导航方向 → 计算目标索引。
+     * 验证失败时弹通知并返回 -1（调用方应停止）。
      *
-     * @param project 当前项目
-     * @param chapters 章节列表
-     * @param direction 导航方向
+     * @param chapterUrls  章节 URL 列表
+     * @param direction    导航方向，-1 表示上一章，1 表示下一章
+     * @param totalChapters 章节总数
+     * @param logPrefix    日志前缀（区分调用场景）
+     * @return 目标章节索引；验证失败时返回 -1
+     */
+    private int resolveNavigationTarget(List<String> chapterUrls, int direction, int totalChapters, String logPrefix) {
+        int currentIndex = ChapterNavigationHelper.findChapterIndex(currentBook, currentChapterId, chapterUrls);
+
+        String validationError = ChapterNavigationHelper.validateNavigation(currentIndex, direction, totalChapters);
+        if (validationError != null) {
+            LOG.warn(logPrefix + validationError);
+            if (currentIndex < 0) {
+                showError("导航失败", validationError);
+            } else {
+                showInfo("导航", validationError);
+            }
+            return -1;
+        }
+        return ChapterNavigationHelper.calculateTargetIndex(currentIndex, direction);
+    }
+
+    /**
+     * 处理章节导航逻辑（同步数据源，章节内容已包含在 {@link ChapterService.EnhancedChapter} 中）。
+     * 在UI线程上执行。
+     *
+     * @param project           当前项目
+     * @param chapters          章节列表
+     * @param direction         导航方向
+     * @param navigateToLastPage 是否导航到目标章节的最后一页（否则第一页）
      */
     private void processChapterNavigation(@NotNull Project project,
                                          @Nullable List<ChapterService.EnhancedChapter> chapters,
-                                         int direction) {
+                                         int direction,
+                                         boolean navigateToLastPage) {
         if (chapters == null || chapters.isEmpty()) {
             LOG.warn("章节列表为空");
             showInfo("导航", "章节列表为空");
@@ -553,39 +584,29 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
         // 提取章节URL列表
         List<String> chapterUrls = chapters.stream().map(ChapterService.EnhancedChapter::url).toList();
 
-        // 使用工具类查找当前章节索引
-        int currentIndex = ChapterNavigationHelper.findChapterIndex(currentBook, currentChapterId, chapterUrls);
-
-        // 验证导航目标
-        String validationError = ChapterNavigationHelper.validateNavigation(currentIndex, direction, chapters.size());
-        if (validationError != null) {
-            LOG.warn(validationError);
-            if (currentIndex < 0) {
-                showError("导航失败", validationError);
-            } else {
-                showInfo("导航", validationError);
-            }
+        int targetIndex = resolveNavigationTarget(chapterUrls, direction, chapters.size(), "");
+        if (targetIndex < 0) {
             return;
         }
 
-        int targetIndex = ChapterNavigationHelper.calculateTargetIndex(currentIndex, direction);
-
         // Get the target chapter and its content
         ChapterService.EnhancedChapter targetChapter = chapters.get(targetIndex);
-        showNavigatedChapter(project, targetChapter.url(), targetChapter.title(), targetChapter.getContent(), targetIndex, false);
+        showNavigatedChapter(project, targetChapter.url(), targetChapter.title(), targetChapter.getContent(), targetIndex, navigateToLastPage);
     }
 
     /**
-     * 使用Book中的cachedChapters处理章节导航逻辑
-     * 在UI线程上执行
+     * 使用Book中的cachedChapters处理章节导航逻辑（异步数据源，章节内容需从 parser 获取）。
+     * 在UI线程上执行。
      *
-     * @param project 当前项目
-     * @param cachedChapters 缓存的章节列表
-     * @param direction 导航方向
+     * @param project           当前项目
+     * @param cachedChapters    缓存的章节列表
+     * @param direction         导航方向
+     * @param navigateToLastPage 是否导航到目标章节的最后一页（否则第一页）
      */
     private void processChapterNavigationWithCachedChapters(@NotNull Project project,
                                                           @Nullable List<Chapter> cachedChapters,
-                                                          int direction) {
+                                                          int direction,
+                                                          boolean navigateToLastPage) {
         if (cachedChapters == null || cachedChapters.isEmpty()) {
             LOG.warn("缓存的章节列表为空，无法导航");
             showInfo("导航", "章节列表为空");
@@ -595,27 +616,17 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
         // 提取章节URL列表
         List<String> chapterUrls = cachedChapters.stream().map(Chapter::url).toList();
 
-        // 使用工具类查找当前章节索引
-        int currentIndex = ChapterNavigationHelper.findChapterIndex(currentBook, currentChapterId, chapterUrls);
-
-        // 验证导航目标
-        String validationError = ChapterNavigationHelper.validateNavigation(currentIndex, direction, cachedChapters.size());
-        if (validationError != null) {
-            LOG.warn(validationError);
-            if (currentIndex < 0) {
-                showError("导航失败", validationError);
-            } else {
-                showInfo("导航", validationError);
-            }
+        int targetIndex = resolveNavigationTarget(chapterUrls, direction, cachedChapters.size(), "[通知栏模式] ");
+        if (targetIndex < 0) {
             return;
         }
-
-        int targetIndex = ChapterNavigationHelper.calculateTargetIndex(currentIndex, direction);
 
         // 获取目标章节
         Chapter targetChapter = cachedChapters.get(targetIndex);
         String targetChapterId = targetChapter.url();
-        String targetChapterTitle = targetChapter.title();
+
+        // 显示加载状态通知
+        showLoadingNotification(project, "正在加载章节内容...");
 
         // 使用异步方式获取章节内容，避免阻塞UI线程
         Single.fromCallable(() -> {
@@ -632,7 +643,7 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
         })
         .subscribe(content -> {
             reactiveSchedulers.runOnUI(() ->
-                showNavigatedChapter(project, targetChapter, content, targetIndex, false));
+                showNavigatedChapter(project, targetChapter, content, targetIndex, navigateToLastPage));
         });
     }
 
@@ -855,7 +866,7 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
         if (cachedChapters != null && !cachedChapters.isEmpty()) {
             LOG.debug("使用Book中的cachedChapters导航到最后一页，章节数量: " + cachedChapters.size());
             // 在UI线程上处理导航逻辑
-            reactiveSchedulers.runOnUI(() -> processChapterNavigationToLastPageWithCachedChapters(project, cachedChapters, direction));
+            reactiveSchedulers.runOnUI(() -> processChapterNavigationWithCachedChapters(project, cachedChapters, direction, true));
             return;
         }
 
@@ -870,114 +881,8 @@ private void addNotificationActions(@NotNull Project project, @NotNull Notificat
             })
             .subscribe(chapters -> {
                 // 在获取到章节列表后，在UI线程上处理导航逻辑
-                reactiveSchedulers.runOnUI(() -> processChapterNavigationToLastPage(project, chapters, direction));
+                reactiveSchedulers.runOnUI(() -> processChapterNavigation(project, chapters, direction, true));
             });
-    }
-
-    /**
-     * 处理章节导航到最后一页的逻辑
-     * 在UI线程上执行
-     *
-     * @param project 当前项目
-     * @param chapters 章节列表
-     * @param direction 导航方向
-     */
-    private void processChapterNavigationToLastPage(@NotNull Project project,
-                                                  @Nullable List<ChapterService.EnhancedChapter> chapters,
-                                                  int direction) {
-        if (chapters == null || chapters.isEmpty()) {
-            LOG.warn("[通知栏模式] 章节列表为空");
-            showInfo("导航", "章节列表为空");
-            return;
-        }
-
-        // 提取章节URL列表
-        List<String> chapterUrls = chapters.stream().map(ChapterService.EnhancedChapter::url).toList();
-
-        // 使用工具类查找当前章节索引
-        int currentIndex = ChapterNavigationHelper.findChapterIndex(currentBook, currentChapterId, chapterUrls);
-
-        // 验证导航目标
-        String validationError = ChapterNavigationHelper.validateNavigation(currentIndex, direction, chapters.size());
-        if (validationError != null) {
-            LOG.warn("[通知栏模式] " + validationError);
-            if (currentIndex < 0) {
-                showError("导航失败", validationError);
-            } else {
-                showInfo("导航", validationError);
-            }
-            return;
-        }
-
-        int targetIndex = ChapterNavigationHelper.calculateTargetIndex(currentIndex, direction);
-
-        // 获取目标章节的信息
-        ChapterService.EnhancedChapter targetChapter = chapters.get(targetIndex);
-        showNavigatedChapter(project, targetChapter.url(), targetChapter.title(), targetChapter.getContent(), targetIndex, true);
-    }
-
-    /**
-     * 使用Book中的cachedChapters处理章节导航到最后一页的逻辑
-     * 在UI线程上执行
-     *
-     * @param project 当前项目
-     * @param cachedChapters 缓存的章节列表
-     * @param direction 导航方向
-     */
-    private void processChapterNavigationToLastPageWithCachedChapters(@NotNull Project project,
-                                                                    @Nullable List<Chapter> cachedChapters,
-                                                                    int direction) {
-        if (cachedChapters == null || cachedChapters.isEmpty()) {
-            LOG.warn("[通知栏模式] 缓存的章节列表为空");
-            showInfo("导航", "章节列表为空");
-            return;
-        }
-
-        // 提取章节URL列表
-        List<String> chapterUrls = cachedChapters.stream().map(Chapter::url).toList();
-
-        // 使用工具类查找当前章节索引
-        int currentIndex = ChapterNavigationHelper.findChapterIndex(currentBook, currentChapterId, chapterUrls);
-
-        // 验证导航目标
-        String validationError = ChapterNavigationHelper.validateNavigation(currentIndex, direction, cachedChapters.size());
-        if (validationError != null) {
-            LOG.warn("[通知栏模式] " + validationError);
-            if (currentIndex < 0) {
-                showError("导航失败", validationError);
-            } else {
-                showInfo("导航", validationError);
-            }
-            return;
-        }
-
-        int targetIndex = ChapterNavigationHelper.calculateTargetIndex(currentIndex, direction);
-
-        // 获取目标章节信息
-        Chapter targetChapter = cachedChapters.get(targetIndex);
-        String targetChapterId = targetChapter.url();
-        String targetChapterTitle = targetChapter.title();
-
-        // 显示加载状态通知
-        showLoadingNotification(project, "正在加载章节内容...");
-
-        // 使用异步方式获取章节内容，避免阻塞UI线程
-        Single.fromCallable(() -> {
-            if (currentBook.getParser() != null) {
-                return currentBook.getParser().getChapterContent(targetChapterId, currentBook);
-            }
-            return null;
-        })
-        .subscribeOn(Schedulers.io())
-        .timeout(30, java.util.concurrent.TimeUnit.SECONDS)
-        .doOnError(e -> {
-            LOG.error("获取章节内容时出错: " + e.getMessage(), e);
-            reactiveSchedulers.runOnUI(() -> showError("导航失败", "获取章节内容时出错: " + e.getMessage()));
-        })
-        .subscribe(content -> {
-            reactiveSchedulers.runOnUI(() ->
-                showNavigatedChapter(project, targetChapter, content, targetIndex, true));
-        });
     }
 
     /**
