@@ -63,7 +63,14 @@ public final class SqliteReadingProgressRepository implements ReadingProgressRep
 
     public SqliteReadingProgressRepository() {
         // Obtain the application-level service instance
-        this.databaseManager = DatabaseManager.getInstance();
+        this(DatabaseManager.getInstance());
+    }
+
+    /**
+     * 包级私有构造：允许测试注入 mock 的 DatabaseManager。
+     */
+    SqliteReadingProgressRepository(DatabaseManager databaseManager) {
+        this.databaseManager = databaseManager;
     }
 
     // --- Implementation of ReadingProgressRepository --- //

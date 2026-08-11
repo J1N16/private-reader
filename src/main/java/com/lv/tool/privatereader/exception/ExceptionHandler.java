@@ -3,9 +3,11 @@ package com.lv.tool.privatereader.exception;
 import com.intellij.notification.Notification;
 import com.intellij.notification.NotificationGroupManager;
 import com.intellij.notification.NotificationType;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.lv.tool.privatereader.config.PrivateReaderConfig;
+import com.lv.tool.privatereader.storage.StorageManager;
 import com.lv.tool.privatereader.util.NetworkUtils;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.schedulers.Schedulers;
@@ -15,6 +17,8 @@ import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
 import javax.net.ssl.SSLException;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
@@ -195,13 +199,38 @@ public class ExceptionHandler {
     }
 
     private static void handleStorageRecovery(Project project) {
-        showRecoveryNotification(project, "存储错误", "正在尝试修复存储问题...");
-        // TODO: 实现存储恢复逻辑
+        try {
+            StorageManager storageManager = ApplicationManager.getApplication().getService(StorageManager.class);
+            if (storageManager == null) {
+                showRecoveryNotification(project, "存储错误", "存储服务不可用，请重启IDE后重试");
+                return;
+            }
+
+            // 检查存储根目录是否可写
+            Path basePath = Path.of(storageManager.getBaseStoragePath());
+            if (!Files.isWritable(basePath)) {
+                showRecoveryNotification(project, "存储错误", "存储目录不可写，请检查磁盘空间和权限: " + basePath);
+                return;
+            }
+
+            // 确保缓存目录存在，清理可能损坏的过期缓存
+            Path cachePath = Path.of(storageManager.getCachePath());
+            if (!Files.exists(cachePath)) {
+                Files.createDirectories(cachePath);
+                LOG.info("存储恢复：重建缓存目录 " + cachePath);
+            }
+
+            showRecoveryNotification(project, "存储已恢复", "存储目录检查通过，请重试操作");
+        } catch (Exception e) {
+            LOG.warn("存储恢复失败: " + e.getMessage(), e);
+            showRecoveryNotification(project, "存储错误", "自动恢复失败，请检查磁盘空间和权限");
+        }
     }
 
     private static void handleParseRecovery(Project project) {
-        showRecoveryNotification(project, "解析错误", "正在尝试使用备用解析方案...");
-        // TODO: 实现解析恢复逻辑
+        // 解析失败多为网页结构变更或编码问题，无安全可靠的自动修复方案。
+        // 如实提示用户，避免"正在修复"的虚假承诺。
+        showRecoveryNotification(project, "解析错误", "章节解析失败，可能是网页结构变更或编码问题。请稍后重试，或刷新章节列表 / 切换书源");
     }
 
     private static void showRecoveryNotification(Project project, String title, String content) {

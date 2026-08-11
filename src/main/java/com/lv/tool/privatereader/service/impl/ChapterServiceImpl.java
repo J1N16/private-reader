@@ -58,6 +58,14 @@ public final class ChapterServiceImpl implements ChapterService {
     }
 
     /**
+     * 包级私有构造：允许测试注入 mock 的依赖。
+     */
+    ChapterServiceImpl(ReactiveChapterCacheRepository chapterCacheRepository, BookRepository bookRepository) {
+        this.chapterCacheRepository = chapterCacheRepository;
+        this.bookRepository = bookRepository;
+    }
+
+    /**
      * 确保服务已初始化
      *
      * @throws IllegalStateException 如果服务初始化失败

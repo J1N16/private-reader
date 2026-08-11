@@ -12,6 +12,7 @@ import io.reactivex.rxjava3.core.Observable;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Optional;
 
@@ -134,7 +135,30 @@ public class BookServiceImpl implements BookService {
     }
 
     @Override
-    public void clearChaptersCache(String bookId) {
-        // TODO: Implement cache clearing logic in the repository layer
+    public void clearChaptersCache(@Nullable String bookId) {
+        try {
+            ChapterService chapterService = ApplicationManager.getApplication().getService(ChapterService.class);
+            if (chapterService == null) {
+                LOG.warn("清除章节缓存失败：ChapterService 不可用");
+                return;
+            }
+
+            if (bookId == null) {
+                // 清空全部章节缓存
+                chapterService.clearAllCache().blockingAwait();
+                LOG.info("已清除全部章节缓存");
+            } else {
+                Book book = bookRepository.getBook(bookId);
+                if (book != null) {
+                    // 同时清理内存缓存（章节列表）与仓库缓存（章节内容）
+                    chapterService.clearBookCache(book).blockingAwait();
+                    LOG.info("已清除书籍章节缓存: " + bookId);
+                } else {
+                    LOG.warn("清除章节缓存失败，未找到书籍: " + bookId);
+                }
+            }
+        } catch (Exception e) {
+            LOG.warn("清除章节缓存失败: " + bookId, e);
+        }
     }
 }
