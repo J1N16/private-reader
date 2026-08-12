@@ -23,6 +23,7 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.time.Duration;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
@@ -30,7 +31,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
 import com.lv.tool.privatereader.service.ChapterService;
 import com.intellij.openapi.components.Service;
 
@@ -57,7 +57,7 @@ public final class FileBookRepository implements BookRepository {
     // 内存缓存，使用 Guava 统一处理容量和过期淘汰
     private final Cache<String, CacheEntry> bookCache = CacheBuilder.newBuilder()
             .maximumSize(MAX_CACHE_SIZE)
-            .expireAfterWrite(30, TimeUnit.MINUTES)
+            .expireAfterWrite(Duration.ofMinutes(30))
             .build();
 
     // 缓存条目

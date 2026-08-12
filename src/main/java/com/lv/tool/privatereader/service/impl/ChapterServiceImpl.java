@@ -18,8 +18,8 @@ import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import org.jetbrains.annotations.NotNull;
 
+import java.time.Duration;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 /**
  * ChapterService接口的实现类
@@ -35,18 +35,18 @@ public final class ChapterServiceImpl implements ChapterService {
     // 书籍章节列表缓存：最多缓存 50 本书的章节列表，访问后 30 分钟过期
     private final Cache<String, List<Chapter>> bookChapterListCache = CacheBuilder.newBuilder()
             .maximumSize(50)
-            .expireAfterAccess(30, TimeUnit.MINUTES)
+            .expireAfterAccess(Duration.ofMinutes(30))
             .build();
 
     // 正在进行的请求缓存：最多 50 个并发请求，写入后 5 分钟过期
     private final Cache<String, Single<List<Chapter>>> chapterListSingleCache = CacheBuilder.newBuilder()
             .maximumSize(50)
-            .expireAfterWrite(5, TimeUnit.MINUTES)
+            .expireAfterWrite(Duration.ofMinutes(5))
             .build();
 
     // 网络请求频率限制缓存：记录上次网络请求时间，避免频繁刷新
     private final Cache<String, Long> lastNetworkCheckCache = CacheBuilder.newBuilder()
-            .expireAfterWrite(30, TimeUnit.MINUTES)
+            .expireAfterWrite(Duration.ofMinutes(30))
             .build();
 
     /**

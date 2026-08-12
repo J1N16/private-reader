@@ -62,6 +62,6 @@ GUI 全链路冒烟需在具备有效 IntelliJ 许可的环境（或 Community �
 
 ## 四、遗留事项
 
-- [ ] 7 处 Guava `CacheBuilder` 弃用 API 替换（低优先级，兼容性无碍）
+- [x] 7 处 Guava `CacheBuilder` 弃用 API 替换（2026-08-12 完成，`TimeUnit` → `java.time.Duration`）
 - [ ] GUI 全链路冒烟：需有效许可的沙箱，或将 `build.gradle` 切换 `intellijIdeaCommunity`
   （插件仅依赖 platform 模块，Community 版可直接运行）

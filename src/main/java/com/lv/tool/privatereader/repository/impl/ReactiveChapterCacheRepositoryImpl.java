@@ -13,6 +13,7 @@ import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
 import java.io.IOException;
+import java.time.Duration;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -48,7 +49,7 @@ public class ReactiveChapterCacheRepositoryImpl implements ReactiveChapterCacheR
         // 初始化内存缓存：最多100个章节，写入后1小时过期
         this.memoryCache = CacheBuilder.newBuilder()
             .maximumSize(100)
-            .expireAfterWrite(1, TimeUnit.HOURS)
+            .expireAfterWrite(Duration.ofHours(1))
             .build();
         this.cacheDir = initCacheDir();
 
