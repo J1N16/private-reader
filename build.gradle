@@ -69,8 +69,9 @@ jacocoTestCoverageVerification {
             limit {
                 counter = 'LINE'
                 value = 'COVEREDRATIO'
-                // 基线为 18.24%（2026-08-13 首次测量）；阈值低于基线作为回归护栏
-                minimum = 0.15
+                // 基线 18.24%（1383/7581，2026-08-13 首次测量）；V9 补测后 LINE 28.02%（2606/7581）
+                // 阈值上调至 0.27 作为回归护栏，留有约 1 个百分点安全余量
+                minimum = 0.27
             }
         }
     }

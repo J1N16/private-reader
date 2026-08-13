@@ -1,5 +1,14 @@
 # Changelog 更新日志
 
+## [Unreleased] - 2026-08-13
+
+### 测试与质量 | Quality and Testing
+- 补充零覆盖包单元测试（settings/model/exception/parser.common 等 16 个测试文件、110 个测试方法）| Added unit tests for zero-coverage packages (16 test files, 110 test cases across settings/model/exception/parser.common)
+- 单元测试总数 99 → 209，LINE 覆盖率 18.24% → 28.02% | Test count 99 → 209, LINE coverage 18.24% → 28.02%
+- JaCoCo 覆盖率阈值 0.15 → 0.27，作为回归护栏 | Raised JaCoCo coverage threshold from 0.15 to 0.27 as a regression guardrail
+- 补充预加载器、NovelParser default 方法与 SettingsStorage 文件读写测试（3 个测试文件、27 个测试方法）| Added tests for preloader, NovelParser default methods, and SettingsStorage file I/O (3 test files, 27 test cases)
+- 单元测试总数 209 → 236，LINE 覆盖率 28.02% → 31.02% | Test count 209 → 236, LINE coverage 28.02% → 31.02%
+
 ## [2.5.1] - 2026-07-16
 
 ### 新增 | Added
