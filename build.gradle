@@ -1,6 +1,7 @@
 plugins {
     id 'java'
     id 'org.jetbrains.intellij.platform'
+    id 'jacoco'
 }
 
 group = 'com.lv.tool'
@@ -41,6 +42,42 @@ dependencies {
 
 test {
     useJUnitPlatform()
+    // 测试执行完毕后生成 JaCoCo 覆盖率报告
+    finalizedBy jacocoTestReport
+    jacoco {
+        // IntelliJ 平台用 PathClassLoader 加载插件类（无 location），须显式纳入
+        includeNoLocationClasses = true
+        excludes = ['jdk.internal.*']
+    }
+}
+
+// JaCoCo 覆盖率：report 生成 XML+HTML，verification 依据阈值校验
+jacocoTestReport {
+    dependsOn test
+    reports {
+        xml.required = true
+        html.required = true
+    }
+    // instrumentCode=false 时指向编译产物；插件类由 PathClassLoader 加载，故用编译 classes 目录
+    classDirectories.setFrom(sourceSets.main.output.classesDirs)
+}
+
+jacocoTestCoverageVerification {
+    dependsOn jacocoTestReport
+    violationRules {
+        rule {
+            limit {
+                counter = 'LINE'
+                value = 'COVEREDRATIO'
+                // 基线为 18.24%（2026-08-13 首次测量）；阈值低于基线作为回归护栏
+                minimum = 0.15
+            }
+        }
+    }
+}
+
+check {
+    dependsOn jacocoTestCoverageVerification
 }
 
 intellijPlatform {
