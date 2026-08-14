@@ -5,7 +5,7 @@ plugins {
 }
 
 group = 'com.lv.tool'
-version = '2.5.1'
+version = '3.0.0'
 
 repositories {
     mavenCentral()
@@ -87,17 +87,19 @@ intellijPlatform {
     patchPluginXml {
         sinceBuild = '261'
         changeNotes = """
-              <h3>2.5.1 版本更新</h3>
+              <h3>3.0.0 版本更新</h3>
               <ul>
-                <li>添加网络性能监控器，统一跟踪网络请求耗时和执行状态</li>
-                <li>修复无最近阅读记录时初始化失败的问题</li>
-                <li>修复安全 HTTP 请求日志中的线程 ID 获取方式</li>
+                <li>优化翻页性能，章节分页结果缓存，翻页更流畅</li>
+                <li>重构响应式阅读流程，消除界面卡顿</li>
+                <li>增强异常恢复能力，存储/解析异常时自动重建缓存</li>
+                <li>优化数据库连接与线程池管理，提升插件稳定性</li>
               </ul>
-              <h3>Version 2.5.1</h3>
+              <h3>Version 3.0.0</h3>
               <ul>
-                <li>Added a network performance monitor to track request timing and execution status</li>
-                <li>Fixed initialization failures when no recent reading record exists</li>
-                <li>Fixed thread ID retrieval in safe HTTP request logs</li>
+                <li>Optimized page-turning performance with chapter pagination caching</li>
+                <li>Refactored the reactive reading pipeline for a smoother UI</li>
+                <li>Enhanced error recovery to automatically rebuild cache on storage/parse errors</li>
+                <li>Improved database connection and thread pool management for stability</li>
               </ul>
               """
     }
