@@ -1,8 +1,10 @@
 package com.lv.tool.privatereader.parser.common;
 
+import java.util.regex.Pattern;
+
 /**
  * 文本格式化工具
- * 用于处理小说文本的格式化，包括段落、对话、场景分隔符和标题的处理
+ * 用于处理小说文本的格式化,包括段落、对话、场景分隔符和标题的处理
  */
 public class TextFormatter {
     private static final int MAX_PARAGRAPH_LENGTH = 500;
@@ -20,6 +22,31 @@ public class TextFormatter {
         // 人物动作
         "只见", "只听", "就见", "就听"
     };
+    
+    // —— 预编译正则(V11:避免每次调用重复编译,长章节高频调用时显著降耗)——
+    private static final Pattern CRLF_PATTERN = Pattern.compile("\\r\\n|\\r");
+    private static final Pattern WHITESPACE_PATTERN = Pattern.compile("[  \\t]+");
+    private static final Pattern ELLIPSIS_PATTERN = Pattern.compile("\\.\\.\\.{2,}|\\.\\.\\.");
+    private static final Pattern EXCLAMATION_PATTERN = Pattern.compile("!{2,}");
+    private static final Pattern QUESTION_PATTERN = Pattern.compile("\\?{2,}");
+    private static final Pattern SENTENCE_SPACE_PATTERN = Pattern.compile("([。!?])(?=[^「」『』\\s])");
+    private static final Pattern SENTENCE_NEWLINE_PATTERN = Pattern.compile("([。!?])(?=\\n)");
+    private static final Pattern DIALOG_SPACE_PATTERN = Pattern.compile("([。!?][「」『』])(?=[^,。!?])");
+    private static final Pattern CHAPTER_HEADING_PATTERN = Pattern.compile(
+            "(?m)^(第[零一二三四五六七八九十百千万]+[章节]\\s*[^\\n]+)$");
+    /** 段落分割正则:空行 / 句末换行 / 指示词前分段(与字符串版行为一致,编译一次复用) */
+    private static final Pattern PARAGRAPH_SPLIT_PATTERN = Pattern.compile(
+            "\\n\\s*\\n+" +                               // 空行
+            "|(?<=[。!?])(?=\\s*\\n)" +                   // 句末换行
+            "|(?<=[。!?])(?=[^,。!?]*?(" + String.join("|", PARAGRAPH_INDICATORS) + "))"); // 指示词
+    private static final Pattern BOOK_TITLE_PATTERN = Pattern.compile("^\\s*第[零一二三四五六七八九十百千万]+[章节].*$");
+    private static final Pattern SENTENCE_SPLIT_PATTERN = Pattern.compile("(?<=[。!?])");
+    private static final Pattern DIALOG_CONTAIN_PATTERN = Pattern.compile(".*[「『].*[」』].*");
+    private static final Pattern DIALOG_OPEN_CONTAIN_PATTERN = Pattern.compile(".*[「『][^「『」』]+$");
+    // 后处理标点/对话/括号模式动态生成(种类有限,懒加载缓存)
+    private static final java.util.Map<String, Pattern> PUNCTUATION_PATTERNS = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.Map<String, Pattern> DIALOG_MARKER_PATTERNS = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final Pattern BRACKET_PATTERN = Pattern.compile("\\s*([()()《》「」『』]+)\\s*");
 
     private static final String[] DIALOG_MARKERS = {
         "「", "」", "\u201C", "\u201D", "『", "』", "'", "'", "\"", "'"
@@ -48,25 +75,24 @@ public class TextFormatter {
      */
     private static String preprocess(String text) {
         // 基础清理
-        text = text.replaceAll("\\r\\n|\\r", "\n")
-                  .replaceAll("[ 　\\t]+", " ")
-                  .trim();
+        text = CRLF_PATTERN.matcher(text).replaceAll("\n");
+        text = WHITESPACE_PATTERN.matcher(text).replaceAll(" ");
+        text = text.trim();
         
         // 标点规范化
-        text = text.replaceAll("…{2,}|\\.\\.\\.", "……")
-                  .replaceAll("!{2,}", "！！")
-                  .replaceAll("\\?{2,}", "？？");
+        text = ELLIPSIS_PATTERN.matcher(text).replaceAll("......");
+        text = EXCLAMATION_PATTERN.matcher(text).replaceAll("!!");
+        text = QUESTION_PATTERN.matcher(text).replaceAll("??");
         
         // 在句末添加空格
-        text = text.replaceAll("([。！？])(?=[^「」『』\\s])", "$1 ");
-        text = text.replaceAll("([。！？])(?=\\n)", "$1 ");
+        text = SENTENCE_SPACE_PATTERN.matcher(text).replaceAll("$1 ");
+        text = SENTENCE_NEWLINE_PATTERN.matcher(text).replaceAll("$1 ");
         
         // 处理对话
-        text = text.replaceAll("([。！？][「」『』])(?=[^，。！？])", "$1 ");
+        text = DIALOG_SPACE_PATTERN.matcher(text).replaceAll("$1 ");
         
         // 处理标题
-        text = text.replaceAll("(?m)^(第[零一二三四五六七八九十百千万]+[章节]\\s*[^\\n]+)$", 
-            "\n\n        $1\n\n");
+        text = CHAPTER_HEADING_PATTERN.matcher(text).replaceAll("\n\n        $1\n\n");
         
         return text;
     }
@@ -75,12 +101,8 @@ public class TextFormatter {
      * 格式化段落
      */
     private static String formatParagraphs(String text) {
-        // 按基本规则分段
-        String[] rawParagraphs = text.split(
-            "\\n\\s*\\n+" +                     // 空行
-            "|(?<=[。！？])(?=\\s*\\n)" +       // 句末换行
-            "|(?<=[。！？])(?=[^，。！？]*?(" + String.join("|", PARAGRAPH_INDICATORS) + "))" // 指示词
-        );
+        // 按基本规则分段(预编译 Pattern,避免每次调用重新编译)
+        String[] rawParagraphs = PARAGRAPH_SPLIT_PATTERN.split(text);
         
         StringBuilder result = new StringBuilder();
         boolean lastWasDialog = false;
@@ -90,7 +112,7 @@ public class TextFormatter {
             if (para.isEmpty()) continue;
             
             // 标题处理
-            if (para.matches("^\\s*第[零一二三四五六七八九十百千万]+[章节].*$")) {
+            if (BOOK_TITLE_PATTERN.matcher(para).matches()) {
                 result.append("\n    ").append(para).append("\n");
                 lastWasDialog = false;
                 continue;
@@ -105,7 +127,7 @@ public class TextFormatter {
             
             // 长段落智能拆分
             if (para.length() > MAX_PARAGRAPH_LENGTH) {
-                String[] sentences = para.split("(?<=[。！？])");
+                String[] sentences = SENTENCE_SPLIT_PATTERN.split(para);
                 StringBuilder temp = new StringBuilder();
                 
                 for (String sent : sentences) {
@@ -143,8 +165,8 @@ public class TextFormatter {
      * 判断是否包含对话
      */
     private static boolean containsDialog(String text) {
-        return text.matches(".*[「『].*[」』].*") || 
-               text.matches(".*[「『][^「『」』]+$") ||  // 未闭合的引号(跨段对话)
+        return DIALOG_CONTAIN_PATTERN.matcher(text).matches() || 
+               DIALOG_OPEN_CONTAIN_PATTERN.matcher(text).matches() ||  // 未闭合的引号(跨段对话)
                text.startsWith("「") || text.startsWith("『");
     }
 
@@ -164,22 +186,28 @@ public class TextFormatter {
      * 后处理文本
      */
     private static String postprocess(String text) {
-        // 处理标点符号前后的空格，但保留句末空格
+        // 处理标点符号前后的空格,但保留句末空格
         for (String mark : PUNCTUATION_MARKS) {
-            if (mark.equals("。") || mark.equals("！") || mark.equals("？")) {
-                text = text.replaceAll("\\s*" + mark + "(?!\\s)", mark + " ");
+            if (mark.equals("。") || mark.equals("!") || mark.equals("?")) {
+                Pattern p = PUNCTUATION_PATTERNS.computeIfAbsent(
+                        "suffix:" + mark, k -> Pattern.compile("\\s*" + Pattern.quote(mark) + "(?!\\s)"));
+                text = p.matcher(text).replaceAll(mark + " ");
             } else {
-                text = text.replaceAll("\\s*" + mark + "\\s*", mark);
+                Pattern p = PUNCTUATION_PATTERNS.computeIfAbsent(
+                        "wrap:" + mark, k -> Pattern.compile("\\s*" + Pattern.quote(mark) + "\\s*"));
+                text = p.matcher(text).replaceAll(mark);
             }
         }
         
         // 处理对话标记前后的空格
         for (String marker : DIALOG_MARKERS) {
-            text = text.replaceAll("\\s*" + marker + "\\s*", marker);
+            Pattern p = DIALOG_MARKER_PATTERNS.computeIfAbsent(
+                    marker, k -> Pattern.compile("\\s*" + Pattern.quote(marker) + "\\s*"));
+            text = p.matcher(text).replaceAll(marker);
         }
         
         // 处理括号前后的空格
-        text = text.replaceAll("\\s*([（）()《》「」『』]+)\\s*", "$1");
+        text = BRACKET_PATTERN.matcher(text).replaceAll("$1");
         
         return text;
     }
