@@ -4,6 +4,7 @@ import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.model.BookProgressData;
 import com.lv.tool.privatereader.repository.BookRepository;
 import com.lv.tool.privatereader.repository.ReadingProgressRepository;
+import io.reactivex.rxjava3.core.Maybe;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -84,16 +85,46 @@ class BookServiceImplTest {
     }
 
     @Test
-    void removeBookDoesNotRemoveBookWhenResetProgressFails() {
-        Book book = new Book("book-1", "测试书籍", "作者", "https://example.com/book");
-        doThrow(new RuntimeException("reset failed")).when(readingProgressRepository).resetProgress(book);
+    void getLastReadBookReturnsEmptyWhenProgressBookMissing() {
+        BookProgressData staleProgress = new BookProgressData(
+                "ghost-book",
+                "chapter-1",
+                "第一章",
+                10,
+                1,
+                false,
+                2000L
+        );
+        when(readingProgressRepository.getLastReadProgressData()).thenReturn(Optional.of(staleProgress));
+        when(bookRepository.getBook("ghost-book")).thenReturn(null);
         BookServiceImpl bookService = new BookServiceImpl(bookRepository, readingProgressRepository);
 
-        RuntimeException error = assertThrows(RuntimeException.class,
-                () -> bookService.removeBook(book).blockingGet());
+        Maybe<Book> result = bookService.getLastReadBook();
 
-        assertEquals("reset failed", error.getMessage());
-        verify(readingProgressRepository).resetProgress(book);
-        verify(bookRepository, never()).removeBook(book);
+        assertTrue(result.isEmpty().blockingGet());
+        verify(readingProgressRepository).resetProgress(new Book("ghost-book", "", "", ""));
+    }
+
+    @Test
+    void getLastReadBookReturnsBookWhenBookExists() {
+        Book book = new Book("book-1", "测试书籍", "作者", "https://example.com/book");
+        BookProgressData progress = new BookProgressData(
+                "book-1",
+                "chapter-2",
+                "第二章",
+                128,
+                3,
+                false,
+                1000L
+        );
+        when(readingProgressRepository.getLastReadProgressData()).thenReturn(Optional.of(progress));
+        when(bookRepository.getBook("book-1")).thenReturn(book);
+        when(readingProgressRepository.getProgress("book-1")).thenReturn(Optional.of(progress));
+        BookServiceImpl bookService = new BookServiceImpl(bookRepository, readingProgressRepository);
+
+        Maybe<Book> result = bookService.getLastReadBook();
+
+        assertTrue(result.blockingGet() != null);
+        assertEquals(book, result.blockingGet());
     }
 }

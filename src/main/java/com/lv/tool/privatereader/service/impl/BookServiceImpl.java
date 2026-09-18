@@ -103,7 +103,19 @@ public class BookServiceImpl implements BookService {
                 .subscribeOn(Schedulers.io())
                 .flatMapMaybe(optionalProgress -> {
                     if (optionalProgress.isPresent()) {
-                        return getBookById(optionalProgress.get().bookId()).toMaybe();
+                        String bookId = optionalProgress.get().bookId();
+                        Book book = bookRepository.getBook(bookId);
+                        if (book == null) {
+                            // 书籍已被删除(如书架为空),清除过期的进度记录,避免每次启动报错
+                            LOG.warn("上次阅读的书籍已不存在(bookId: " + bookId + "),清除过期的阅读进度记录");
+                            try {
+                                readingProgressRepository.resetProgress(new Book(bookId, "", "", ""));
+                            } catch (Exception cleanupException) {
+                                LOG.warn("清除过期阅读进度记录失败(bookId: " + bookId + ")", cleanupException);
+                            }
+                            return Maybe.empty();
+                        }
+                        return loadProgressForBook(book).toMaybe();
                     }
                     return Maybe.empty();
                 });
