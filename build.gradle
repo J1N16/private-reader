@@ -19,11 +19,11 @@ repositories {
 }
 
 dependencies {
-    implementation 'org.jsoup:jsoup:1.22.2'
-    implementation 'org.xerial:sqlite-jdbc:3.53.2.1'
+    implementation 'org.jsoup:jsoup:1.23.2'
+    implementation 'org.xerial:sqlite-jdbc:3.53.4.0'
     implementation 'io.reactivex.rxjava3:rxjava:3.1.12'
     implementation 'com.google.code.gson:gson:2.14.0'
-    implementation 'com.google.guava:guava:33.6.0-jre'
+    implementation 'com.google.guava:guava:33.7.1-jre'
 
     // IntelliJ Platform
     intellijPlatform {
@@ -116,10 +116,10 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 wrapper {
-    gradleVersion = '9.7.0'
+    gradleVersion = '9.7.1'
     distributionType = Wrapper.DistributionType.BIN
-    distributionSha256Sum = '84fbba45c7f4c64abc77460e1c00f541e9f960e3c7ed2538f1ede19eacd873ae'
-    distributionUrl = 'https://mirrors.cloud.tencent.com/gradle/gradle-9.7.0-bin.zip'
+    distributionSha256Sum = 'acd53f1edaf02f1a8ff99879f8a34b302661a057d9b063ae9e35b552f804d20a'
+    distributionUrl = 'https://mirrors.cloud.tencent.com/gradle/gradle-9.7.1-bin.zip'
 }
 
 // Add duplicate handling strategy for Jar tasks
