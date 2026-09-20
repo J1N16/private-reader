@@ -351,9 +351,9 @@ public class CacheConfigurable implements Configurable {
             } else if (os.contains("nix") || os.contains("nux")) {
                 command = new String[]{"xdg-open", directory.getAbsolutePath()};
             } else {
-                // 最后尝试使用BrowserUtil
+                // 最后尝试使用BrowserUtil打开
                 LOG.info("使用BrowserUtil打开目录: " + directory);
-                BrowserUtil.browse(directory);
+                BrowserUtil.browse(directory.toPath());
                 return;
             }
 
@@ -367,7 +367,7 @@ public class CacheConfigurable implements Configurable {
             // 最后尝试使用BrowserUtil作为备选方案
             try {
                 LOG.info("尝试使用BrowserUtil作为备选方案");
-                BrowserUtil.browse(directory);
+                BrowserUtil.browse(directory.toPath());
             } catch (Exception ex) {
                 LOG.error("使用BrowserUtil打开目录失败: " + ex.getMessage(), ex);
             }
