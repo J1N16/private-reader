@@ -26,19 +26,72 @@ public class NetworkUtils {
         "www.aliyun.com"
     };
     private static final int TIMEOUT = 3000;
+    /** 网络检测结果缓存有效期:30 秒内重复调用直接复用,避免频繁扫描 */
+    private static final long CACHE_TTL_MILLIS = 30_000;
+
+    /** 最近一次网络检测结果(带时间戳),用于 TTL 缓存 */
+    private static volatile CachedResult lastResult;
+
+    private static final class CachedResult {
+        final long timestamp;
+        final boolean available;
+
+        CachedResult(long timestamp, boolean available) {
+            this.timestamp = timestamp;
+            this.available = available;
+        }
+    }
 
     /**
-     * 检查网络是否可用
+     * 检查网络是否可用(带 30 秒结果缓存 + 多主机并行检测)。
+     * <p>
+     * 原实现串行扫描 3 个主机各 3 秒,网络不可用时最多阻塞 9 秒;
+     * 现在 3 个主机并行探测、任一成功即返回,最坏仍只需约 3 秒,
+     * 且 30 秒内重复调用直接复用上次结果,避免错误恢复路径上的重复阻塞。
      */
     public static boolean isNetworkAvailable() {
-        LOG.info("开始检查网络连接...");
-        for (String host : CHECK_HOSTS) {
-            if (isHostReachable(host)) {
-                LOG.info("网络连接正常，可以访问: " + host);
-                return true;
+        long now = System.currentTimeMillis();
+        CachedResult cached = lastResult;
+        if (cached != null && now - cached.timestamp < CACHE_TTL_MILLIS) {
+            LOG.debug("使用缓存的网络检测结果(30s TTL): " + cached.available);
+            return cached.available;
+        }
+
+        LOG.info("开始检查网络连接(并行探测 " + CHECK_HOSTS.length + " 个主机)...");
+        boolean result = probeHostsInParallel();
+        lastResult = new CachedResult(now, result);
+        return result;
+    }
+
+    /**
+     * 并行探测所有检测主机,任一可达即返回 true。
+     */
+    @SuppressWarnings("unchecked")
+    private static boolean probeHostsInParallel() {
+        CompletableFuture<Boolean>[] futures = new CompletableFuture[CHECK_HOSTS.length];
+        for (int i = 0; i < CHECK_HOSTS.length; i++) {
+            final String host = CHECK_HOSTS[i];
+            futures[i] = CompletableFuture.supplyAsync(() -> {
+                try {
+                    return isHostReachable(host);
+                } catch (Exception e) {
+                    LOG.warn("测试主机连接失败: " + host, e);
+                    return false;
+                }
+            });
+        }
+
+        for (CompletableFuture<Boolean> future : futures) {
+            try {
+                if (future.get(TIMEOUT, TimeUnit.MILLISECONDS)) {
+                    LOG.info("网络连接正常,可以访问测试主机");
+                    return true;
+                }
+            } catch (InterruptedException | ExecutionException | TimeoutException e) {
+                // 忽略单个主机的异常,继续检查其他主机
             }
         }
-        LOG.warn("网络连接异常，无法访问任何测试主机");
+        LOG.warn("网络连接异常,无法访问任何测试主机");
         return false;
     }
 
@@ -146,11 +199,28 @@ public class NetworkUtils {
         return isUrlAccessible(urlString, TIMEOUT);
     }
 
+    // --- 包级测试辅助方法(仅测试用,不属于公共 API) ---
+
+    /** 检查最近一次网络检测结果是否已持久化(供测试验证缓存语义) */
+    static CachedResult getCachedResultForTest() {
+        return lastResult;
+    }
+
+    /** 直接写入缓存结果(供测试操纵 TTL 语义) */
+    static void setCachedResultForTest(boolean available, long timestamp) {
+        lastResult = new CachedResult(timestamp, available);
+    }
+
+    /** 清除缓存结果(供测试隔离用例) */
+    static void resetProbeCacheForTest() {
+        lastResult = null;
+    }
+
     /**
      * 测试URL是否可访问
      *
      * @param urlString URL字符串
-     * @param timeoutMs 超时时间（毫秒）
+     * @param timeoutMs 超时时间(毫秒)
      * @return URL是否可访问
      */
     public static boolean isUrlAccessible(String urlString, int timeoutMs) {

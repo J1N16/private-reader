@@ -69,9 +69,11 @@ jacocoTestCoverageVerification {
             limit {
                 counter = 'LINE'
                 value = 'COVEREDRATIO'
-                // 基线 18.24%（1383/7581，2026-08-13 首次测量）；V9 补测后 LINE 28.02%（2606/7581）
-                // 阈值上调至 0.27 作为回归护栏，留有约 1 个百分点安全余量
-                minimum = 0.27
+                // 基线 18.24%(1383/7581,2026-08-13 首次测量);V9 补测后 LINE 28.02%(2606/7581)
+                // V12 阈值上调至 0.27 作为回归护栏,留有约 1 个百分点安全余量
+                // V13 补测 ChapterServiceImpl/NotificationServiceImpl + 拆分 FileBookRepository 后 LINE 33.54%(2573/7672),
+                // 阈值上调至 0.30 作为回归护栏,留有约 3.5 个百分点安全余量
+                minimum = 0.30
             }
         }
     }

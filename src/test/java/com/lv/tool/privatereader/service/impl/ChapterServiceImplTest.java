@@ -159,4 +159,72 @@ class ChapterServiceImplTest {
 
         verify(chapterCacheRepository).clearAllCache();
     }
+
+    // --- getChapter:从章节列表中找到匹配章节 ---
+
+    @Test
+    void getChapterReturnsMatchingChapterFromList() {
+        book.setCachedChapters(List.of(
+                new Chapter("第一章", "https://example.com/1"),
+                new Chapter("第二章", "https://example.com/2")
+        ));
+
+        Chapter found = service.getChapter(book, "https://example.com/2").blockingGet();
+
+        assertEquals("第二章", found.title());
+    }
+
+    // --- getChapterWithFallback:未找到 → 抛 PrivateReaderException(测试环境 Logger.error 会抛 AssertionError,
+    // 被 RxJava 包装成 CompositeException,故断言其内部包含 PrivateReaderException) ---
+
+    @Test
+    void getChapterWithFallbackThrowsWhenChapterNotFound() {
+        book.setCachedChapters(List.of(new Chapter("第一章", "https://example.com/1")));
+
+        try {
+            service.getChapterWithFallback(book, "https://example.com/none").blockingGet();
+            org.junit.jupiter.api.Assertions.fail("应抛出 PrivateReaderException");
+        } catch (com.lv.tool.privatereader.exception.PrivateReaderException expected) {
+            // 生产环境直接抛出 PrivateReaderException
+            assertEquals("无法找到章节: https://example.com/none", expected.getMessage());
+        } catch (io.reactivex.rxjava3.exceptions.CompositeException ce) {
+            // 测试环境 Logger.error → AssertionError 包装成 CompositeException,内含目标异常
+            boolean found = ce.getExceptions().stream()
+                    .anyMatch(e -> e instanceof com.lv.tool.privatereader.exception.PrivateReaderException);
+            org.junit.jupiter.api.Assertions.assertTrue(found, "CompositeException 应包含 PrivateReaderException: " + ce);
+        } catch (Throwable other) {
+            org.junit.jupiter.api.Assertions.fail("未预期的异常类型: " + other.getClass().getName() + " : " + other.getMessage());
+        }
+    }
+
+    // --- getChapterTitle:book 不存在 → Error 消息 ---
+
+    @Test
+    void getChapterTitleReturnsErrorWhenBookMissing() {
+        when(bookRepository.getBook("missing-book")).thenReturn(null);
+
+        String title = service.getChapterTitle("missing-book", "ch-1").blockingGet();
+
+        assertEquals("Error: Book not found.", title);
+    }
+
+    @Test
+    void getChapterTitleReturnsChapterTitleWhenFound() {
+        book.setCachedChapters(List.of(new Chapter("第一章", "ch-1")));
+        when(bookRepository.getBook("book-1")).thenReturn(book);
+
+        String title = service.getChapterTitle("book-1", "ch-1").blockingGet();
+
+        assertEquals("第一章", title);
+    }
+
+    @Test
+    void getChapterTitleReturnsErrorWhenChapterMissingFromList() {
+        book.setCachedChapters(List.of(new Chapter("第一章", "ch-1")));
+        when(bookRepository.getBook("book-1")).thenReturn(book);
+
+        String title = service.getChapterTitle("book-1", "ch-none").blockingGet();
+
+        assertEquals("Error: Chapter not found in list.", title);
+    }
 }

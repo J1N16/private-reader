@@ -555,7 +555,8 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
 
         // Get the target chapter and its content
         ChapterService.EnhancedChapter targetChapter = chapters.get(targetIndex);
-        showNavigatedChapter(project, targetChapter.url(), targetChapter.title(), targetChapter.getContent(), targetIndex, navigateToLastPage);
+        NovelParser.Chapter eventChapter = new NovelParser.Chapter(targetChapter.title(), targetChapter.url());
+        showNavigatedChapter(project, eventChapter, targetChapter.getContent(), targetIndex, navigateToLastPage, "");
     }
 
     /**
@@ -608,7 +609,7 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
         })
         .subscribe(content -> {
             reactiveSchedulers.runOnUI(() ->
-                showNavigatedChapter(project, targetChapter, content, targetIndex, navigateToLastPage));
+                showNavigatedChapter(project, targetChapter, content, targetIndex, navigateToLastPage, "cachedChapters"));
         });
     }
 
@@ -853,24 +854,27 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
     }
 
     /**
-     * 处理章节导航后的统一展示流程(同步数据源专用)。
+     * 处理章节导航后的统一展示流程。
      * <p>
      * 由 4 组导航方法共享的"更新状态 → 分页 → 显示通知 → 保存进度 → 预加载 → 发布事件"流水线。
-     * 该重载在调用方(UI 线程)执行,适用于目标章节内容已直接可得的场景(EnhancedChapter)。
+     * 同步(EnhancedChapter)与异步(cachedChapters)两个数据源均收敛到此唯一入口。
      *
      * @param project 当前项目
-     * @param targetChapterId 目标章节ID
-     * @param targetChapterTitle 目标章节标题
+     * @param targetChapter 目标章节(含 url/title,用于发布事件)
      * @param targetChapterContent 目标章节内容
      * @param targetIndex 目标章节索引
      * @param navigateToLastPage 是否导航到最后一页(否则导航到第一页)
+     * @param sourceLogTag 日志来源标识(数据源差异,如 "cachedChapters")
      */
     private void showNavigatedChapter(@NotNull Project project,
-                                      @NotNull String targetChapterId,
-                                      @NotNull String targetChapterTitle,
+                                      @NotNull NovelParser.Chapter targetChapter,
                                       @NotNull String targetChapterContent,
                                       int targetIndex,
-                                      boolean navigateToLastPage) {
+                                      boolean navigateToLastPage,
+                                      @NotNull String sourceLogTag) {
+        String targetChapterId = targetChapter.url();
+        String targetChapterTitle = targetChapter.title();
+
         if (targetChapterContent == null || targetChapterContent.isEmpty()) {
             LOG.warn("[通知栏模式] 目标章节内容为空: " + targetChapterId);
             showError("导航失败", "目标章节内容为空");
@@ -903,75 +907,7 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
         // 使用工具类保存进度
         ProgressSaveHelper.saveProgress(book, targetChapterId, targetChapterTitle, pageIndex);
 
-        LOG.info("[通知栏模式] 导航到章节: " + targetChapterId + (navigateToLastPage ? " (最后一页)" : ""));
-
-        // 触发章节预加载
-        triggerChapterPreload(book, targetIndex);
-
-        // 设置事件源并发布章节变更事件
-        if (chapterChangeManager != null) {
-            chapterChangeManager.setEventSource(ChapterChangeEventSource.NOTIFICATION_SERVICE);
-        }
-        ApplicationManager.getApplication().getMessageBus()
-                .syncPublisher(CurrentChapterNotifier.TOPIC)
-                .currentChapterChanged(book, new NovelParser.Chapter(targetChapterTitle, targetChapterId));
-        LOG.info("[通知栏模式] 已发布章节变更事件: " + targetChapterTitle);
-    }
-
-    /**
-     * 处理章节导航后的统一展示流程(异步数据源专用)。
-     * <p>
-     * 与 {@link #showNavigatedChapter(Project, String, String, String, int, boolean)} 相同,
-     * 但它在异步订阅回调中执行,目标章节以 {@link Chapter} 对象传入(内容需已异步获取)。
-     * 与同步重载的唯一行为差异是发布事件时使用原始 Chapter 对象(保留 url/title 字段)。
-     *
-     * @param project 当前项目
-     * @param targetChapter 目标章节(内容已获取)
-     * @param content 目标章节内容
-     * @param targetIndex 目标章节索引
-     * @param navigateToLastPage 是否导航到最后一页
-     */
-    private void showNavigatedChapter(@NotNull Project project,
-                                      @NotNull NovelParser.Chapter targetChapter,
-                                      @NotNull String content,
-                                      int targetIndex,
-                                      boolean navigateToLastPage) {
-        String targetChapterId = targetChapter.url();
-        String targetChapterTitle = targetChapter.title();
-
-        if (content == null || content.isEmpty()) {
-            LOG.warn("[通知栏模式] 目标章节内容为空: " + targetChapterId);
-            showError("导航失败", "目标章节内容为空");
-            return;
-        }
-
-        Book book = getViewState().getBook();
-        // 更新当前章节信息
-        updateViewState(s -> s.withChapter(book, targetChapterId, targetChapterTitle));
-
-        // 分页并定位到目标页
-        setCurrentChapterContent(content);
-        List<String> pages = getViewState().getPages();
-        if (pages.isEmpty()) {
-            LOG.warn("[通知栏模式] 分页后内容为空,无法显示通知: " + targetChapterId);
-            showError("显示章节失败", "分页后内容为空");
-            return;
-        }
-        int pageIndex = navigateToLastPage ? pages.size() - 1 : 0;
-        updateViewState(s -> s.withPageIndex(pageIndex));
-
-        // 使用工具类构建通知内容并显示
-        String title = ProgressSaveHelper.buildNotificationTitle(book.getTitle(), targetChapterTitle);
-        String notificationContent = ProgressSaveHelper.buildNotificationContent(
-            pages.get(pageIndex), pageIndex, pages.size(),
-            notificationSettings != null && notificationSettings.isShowReadingProgress());
-
-        showCurrentPageInternal(project, title, notificationContent);
-
-        // 使用工具类保存进度
-        ProgressSaveHelper.saveProgress(book, targetChapterId, targetChapterTitle, pageIndex);
-
-        LOG.info("[通知栏模式] 使用cachedChapters导航到章节" + (navigateToLastPage ? "的最后一页" : "") + ": " + targetChapterId);
+        LOG.info("[通知栏模式] 使用" + sourceLogTag + "导航到章节" + (navigateToLastPage ? "的最后一页" : "") + ": " + targetChapterId);
 
         // 触发章节预加载
         triggerChapterPreload(book, targetIndex);
@@ -983,7 +919,7 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
         ApplicationManager.getApplication().getMessageBus()
                 .syncPublisher(CurrentChapterNotifier.TOPIC)
                 .currentChapterChanged(book, targetChapter);
-        LOG.info("[通知栏模式] 已发布章节变更事件: " + targetChapter.title());
+        LOG.info("[通知栏模式] 已发布章节变更事件: " + targetChapterTitle);
     }
 
     /**

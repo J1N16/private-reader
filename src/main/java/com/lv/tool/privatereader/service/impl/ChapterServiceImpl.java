@@ -288,20 +288,22 @@ public final class ChapterServiceImpl implements ChapterService {
 
         LOG.info("异步获取章节标题: 书籍ID='" + bookId + "', 章节ID=" + chapterId);
 
-        return Single.fromCallable(() -> bookRepository.getBook(bookId))
-            .subscribeOn(Schedulers.io())
-            .flatMap(book -> {
-                if (book == null) {
-                    LOG.warn("异步获取章节标题失败: 未找到书籍ID='" + bookId + "'");
-                    return Single.just("Error: Book not found.");
-                }
-                return getChapterList(book)
-                    .map(chapters -> chapters.stream()
-                        .filter(c -> chapterId.equals(c.url()))
-                        .findFirst()
-                        .map(Chapter::title)
-                        .orElse("Error: Chapter not found in list."));
-            })
-            .doOnError(e -> LOG.error("异步获取章节标题时发生错误: 书籍ID='" + bookId + "', 章节ID=" + chapterId, e));
+        // 用 defer 包裹同步取书:Single.fromCallable 在 callable 返回 null 时会抛 NPE,
+        // 导致"书籍不存在"无法走 book == null 分支返回错误消息。defer 中同步判断即可。
+        return Single.defer(() -> {
+                    Book book = bookRepository.getBook(bookId);
+                    if (book == null) {
+                        LOG.warn("异步获取章节标题失败: 未找到书籍ID='" + bookId + "'");
+                        return Single.just("Error: Book not found.");
+                    }
+                    return getChapterList(book)
+                        .map(chapters -> chapters.stream()
+                            .filter(c -> chapterId.equals(c.url()))
+                            .findFirst()
+                            .map(Chapter::title)
+                            .orElse("Error: Chapter not found in list."));
+                })
+                .subscribeOn(Schedulers.io())
+                .doOnError(e -> LOG.error("异步获取章节标题时发生错误: 书籍ID='" + bookId + "', 章节ID=" + chapterId, e));
     }
 }
