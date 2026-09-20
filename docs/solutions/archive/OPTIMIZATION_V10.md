@@ -2,7 +2,7 @@
 
 > 创建日期: 2026-08-13
 > 项目版本: 2.5.1
-> 配套: [OPTIMIZATION_V9.md](./OPTIMIZATION_V9.md)（零覆盖包补测与覆盖率护栏上调）
+> 配套: [OPTIMIZATION_V9.md](../OPTIMIZATION_V9.md)（零覆盖包补测与覆盖率护栏上调）
 > 实施状态: 已完成 ✅（2026-08-13）
 
 ---

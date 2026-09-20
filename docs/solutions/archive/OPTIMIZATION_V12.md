@@ -2,7 +2,7 @@
 
 > 创建日期: 2026-09-18
 > 项目版本: 3.0.0
-> 配套: [OPTIMIZATION_V11.md](./OPTIMIZATION_V11.md)(V11 拆分通知服务/不可变状态/正则预编译)
+> 配套: [OPTIMIZATION_V11.md](../OPTIMIZATION_V11.md)(V11 拆分通知服务/不可变状态/正则预编译)
 > 实施状态: 已完成 ✅(2026-09-18)
 > 目标: 消除核心服务类的散落 `ApplicationManager.getApplication().getService(...)` 硬编码,
 >       改为 IntelliJ Platform 官方构造器注入,提升可测试性与依赖可见性

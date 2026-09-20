@@ -2,7 +2,7 @@
 
 > 创建日期: 2026-08-13
 > 项目版本: 2.5.1
-> 配套: [OPTIMIZATION_V7.md](./OPTIMIZATION_V7.md)
+> 配套: [OPTIMIZATION_V7.md](../OPTIMIZATION_V7.md)
 
 ---
 

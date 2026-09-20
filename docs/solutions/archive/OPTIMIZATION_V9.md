@@ -2,7 +2,7 @@
 
 > 创建日期: 2026-08-13
 > 项目版本: 2.5.1
-> 配套: [OPTIMIZATION_V8.md](./OPTIMIZATION_V8.md)（CI 与覆盖率集成）
+> 配套: [OPTIMIZATION_V8.md](../OPTIMIZATION_V8.md)（CI 与覆盖率集成）
 > 实施状态: 已完成 ✅（2026-08-13）
 
 ---

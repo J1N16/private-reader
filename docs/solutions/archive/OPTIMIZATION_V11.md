@@ -2,7 +2,7 @@
 
 > 创建日期: 2026-09-18
 > 项目版本: 3.0.0
-> 配套: [OPTIMIZATION_V10.md](./OPTIMIZATION_V10.md)(V10 补测与覆盖率护栏)
+> 配套: [OPTIMIZATION_V10.md](../OPTIMIZATION_V10.md)(V10 补测与覆盖率护栏)
 > 实施状态: 已完成 ✅(2026-09-18)
 > 目标: 落实"短期优化第 1 项"——拆分 NotificationServiceImpl 臃肿类、多字段状态封装、
 >       TextFormatter 正则预编译

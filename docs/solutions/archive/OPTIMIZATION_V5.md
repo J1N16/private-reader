@@ -3,7 +3,7 @@
 > 生成日期: 2026-08-11
 > 项目版本: 2.5.1
 > 分析范围: 测试覆盖空白、遗留 TODO、网络层重试逻辑
-> 前序文档: [OPTIMIZATION_V3.md](./OPTIMIZATION_V3.md)、[OPTIMIZATION_V4.md](./OPTIMIZATION_V4.md)
+> 前序文档: [OPTIMIZATION_V3.md](../OPTIMIZATION_V3.md)、[OPTIMIZATION_V4.md](../OPTIMIZATION_V4.md)
 > 实施状态: 全部完成 ✅（2026-08-11）
 
 ---

@@ -3,7 +3,7 @@
 > 生成日期: 2026-08-10
 > 项目版本: 2.5.1
 > 分析范围: 全量代码核查（106 文件 / 约 1.9 万行）
-> 前序文档: [OPTIMIZATION.md](./OPTIMIZATION.md)（2.5.0 实施记录）、[OPTIMIZATION_PLAN.md](./OPTIMIZATION_PLAN.md)（2.5.0 计划）
+> 前序文档: [OPTIMIZATION.md](../OPTIMIZATION.md)（2.5.0 实施记录）、[OPTIMIZATION_PLAN.md](../OPTIMIZATION_PLAN.md)（2.5.0 计划）
 
 ---
 
