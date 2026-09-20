@@ -50,62 +50,27 @@ public final class ChapterServiceImpl implements ChapterService {
             .build();
 
     /**
-     * 无参构造方法
+     * 无参构造:供 IntelliJ 服务容器调用,依赖由容器自动注入(V12 构造器注入改造)。
      */
     public ChapterServiceImpl() {
-        LOG.info("初始化ChapterServiceImpl");
-        // 服务将在首次需要时异步初始化
+        this(
+            ApplicationManager.getApplication().getService(ReactiveChapterCacheRepository.class),
+            ApplicationManager.getApplication().getService(BookRepository.class)
+        );
     }
 
     /**
-     * 包级私有构造：允许测试注入 mock 的依赖。
+     * 构造器注入:用于测试与依赖注入,依赖由调用方提供。
      */
-    ChapterServiceImpl(ReactiveChapterCacheRepository chapterCacheRepository, BookRepository bookRepository) {
+    public ChapterServiceImpl(ReactiveChapterCacheRepository chapterCacheRepository, BookRepository bookRepository) {
+        LOG.info("初始化ChapterServiceImpl");
         this.chapterCacheRepository = chapterCacheRepository;
         this.bookRepository = bookRepository;
     }
 
-    /**
-     * 确保服务已初始化
-     *
-     * @throws IllegalStateException 如果服务初始化失败
-     */
-    private void ensureServicesInitialized() {
-        // Initialize ChapterCacheRepository if needed
-        if (chapterCacheRepository == null) {
-            LOG.debug("尝试初始化 ChapterCacheRepository 服务");
-            try {
-                chapterCacheRepository = ApplicationManager.getApplication().getService(ReactiveChapterCacheRepository.class);
-                if (chapterCacheRepository != null) {
-                    LOG.debug("ChapterCacheRepository 服务初始化成功");
-                } else {
-                    LOG.error("ChapterCacheRepository 服务无法初始化!");
-                }
-            } catch (Exception e) {
-                LOG.error("初始化 ChapterCacheRepository 服务时出错: " + e.getMessage(), e);
-            }
-        }
-
-        // Initialize BookRepository directly if needed
-        if (bookRepository == null) {
-            LOG.debug("尝试初始化 BookRepository 服务");
-            try {
-                bookRepository = ApplicationManager.getApplication().getService(BookRepository.class);
-                if (bookRepository == null) {
-                    String errorMsg = "BookRepository 服务无法初始化!";
-                    LOG.error(errorMsg, new IllegalStateException(errorMsg));
-                } else {
-                    LOG.debug("BookRepository 服务初始化成功");
-                }
-            } catch (Exception e) {
-                LOG.error("初始化 BookRepository 服务时出错: " + e.getMessage(), e);
-            }
-        }
-    }
-
     @Override
     public Single<String> getChapterContent(@NotNull Book book, @NotNull String chapterId) {
-        ensureServicesInitialized();
+
         return Single.defer(() -> {
             // 首先检查有效缓存
             String cachedContent = chapterCacheRepository.getCachedContent(book.getId(), chapterId);
@@ -139,7 +104,7 @@ public final class ChapterServiceImpl implements ChapterService {
 
     @Override
     public String getChapterContentSync(@NotNull String bookId, @NotNull String chapterId) {
-        ensureServicesInitialized();
+
         try {
             Book book = bookRepository.getBook(bookId);
             if (book == null) {
@@ -153,7 +118,7 @@ public final class ChapterServiceImpl implements ChapterService {
 
     @Override
     public Single<Chapter> getChapter(@NotNull Book book, @NotNull String chapterId) {
-        ensureServicesInitialized();
+
         LOG.info("获取章节元数据: 书籍='" + book.getTitle() + "', 章节ID=" + chapterId);
 
         return getChapterList(book)
@@ -170,7 +135,7 @@ public final class ChapterServiceImpl implements ChapterService {
 
     @Override
     public Single<Chapter> getChapterWithFallback(@NotNull Book book, @NotNull String chapterId) {
-        ensureServicesInitialized();
+
         LOG.info("获取章节元数据(带回退): 书籍='" + book.getTitle() + "', 章节ID=" + chapterId);
 
         return getChapter(book, chapterId)
@@ -186,7 +151,7 @@ public final class ChapterServiceImpl implements ChapterService {
 
     @Override
     public Single<List<Chapter>> getChapterList(@NotNull Book book) {
-        ensureServicesInitialized();
+
         String bookId = book.getId();
         LOG.info("获取章节列表: 书籍='" + book.getTitle() + "' (缓存优先策略)");
 
@@ -291,7 +256,7 @@ public final class ChapterServiceImpl implements ChapterService {
 
     @Override
     public Completable clearBookCache(@NotNull Book book) {
-        ensureServicesInitialized();
+
         String bookId = book.getId();
         LOG.info("清除书籍缓存: " + book.getTitle() + " (ID: " + bookId + ")");
         // 将 Runnable 包装在 Completable 中，并在 io 线程执行
@@ -306,7 +271,7 @@ public final class ChapterServiceImpl implements ChapterService {
 
     @Override
     public Completable clearAllCache() {
-        ensureServicesInitialized();
+
         LOG.info("清除所有章节缓存");
         // 将 Runnable 包装在 Completable 中，并在 io 线程执行
         return Completable.fromRunnable(() -> {
@@ -320,7 +285,7 @@ public final class ChapterServiceImpl implements ChapterService {
 
     @Override
     public Single<String> getChapterTitle(@NotNull String bookId, @NotNull String chapterId) {
-        ensureServicesInitialized();
+
         LOG.info("异步获取章节标题: 书籍ID='" + bookId + "', 章节ID=" + chapterId);
 
         return Single.fromCallable(() -> bookRepository.getBook(bookId))

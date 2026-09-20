@@ -26,12 +26,27 @@ public final class PrivateReaderConfig {
     private final ReaderModeSettings modeSettings;
     
     public PrivateReaderConfig() {
-        // 直接使用 ApplicationManager 获取应用级别服务
-        this.pluginSettings = ApplicationManager.getApplication().getService(PluginSettings.class);
-        this.readerSettings = ApplicationManager.getApplication().getService(ReaderSettings.class);
-        this.cacheSettings = ApplicationManager.getApplication().getService(CacheSettings.class);
-        this.notificationSettings = ApplicationManager.getApplication().getService(NotificationReaderSettings.class);
-        this.modeSettings = ApplicationManager.getApplication().getService(ReaderModeSettings.class);
+        // IntelliJ 服务容器构造器注入:自动从容器解析全部依赖(V12 改造)
+        this(
+            ApplicationManager.getApplication().getService(PluginSettings.class),
+            ApplicationManager.getApplication().getService(ReaderSettings.class),
+            ApplicationManager.getApplication().getService(CacheSettings.class),
+            ApplicationManager.getApplication().getService(NotificationReaderSettings.class),
+            ApplicationManager.getApplication().getService(ReaderModeSettings.class)
+        );
+    }
+
+    /**
+     * 构造器注入:用于测试与依赖注入,依赖由调用方提供。
+     */
+    public PrivateReaderConfig(PluginSettings pluginSettings, ReaderSettings readerSettings,
+                               CacheSettings cacheSettings, NotificationReaderSettings notificationSettings,
+                               ReaderModeSettings modeSettings) {
+        this.pluginSettings = pluginSettings;
+        this.readerSettings = readerSettings;
+        this.cacheSettings = cacheSettings;
+        this.notificationSettings = notificationSettings;
+        this.modeSettings = modeSettings;
     }
     
     /**

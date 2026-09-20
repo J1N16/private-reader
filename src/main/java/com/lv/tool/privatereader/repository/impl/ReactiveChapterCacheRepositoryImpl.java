@@ -44,9 +44,16 @@ public class ReactiveChapterCacheRepositoryImpl implements ReactiveChapterCacheR
     private Disposable cleanupDisposable;
 
     public ReactiveChapterCacheRepositoryImpl() {
-        this.cacheSettings = com.intellij.openapi.application.ApplicationManager.getApplication().getService(CacheSettings.class);
+        this(com.intellij.openapi.application.ApplicationManager.getApplication().getService(CacheSettings.class));
+    }
 
-        // 初始化内存缓存：最多100个章节，写入后1小时过期
+    /**
+     * 构造器注入:用于测试与依赖注入,依赖由调用方提供(V12 构造器注入改造)。
+     */
+    ReactiveChapterCacheRepositoryImpl(CacheSettings cacheSettings) {
+        this.cacheSettings = cacheSettings;
+
+        // 初始化内存缓存:最多100个章节,写入后1小时过期
         this.memoryCache = CacheBuilder.newBuilder()
             .maximumSize(100)
             .expireAfterWrite(Duration.ofHours(1))

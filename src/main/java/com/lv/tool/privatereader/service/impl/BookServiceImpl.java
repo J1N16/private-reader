@@ -22,18 +22,20 @@ public class BookServiceImpl implements BookService {
 
     private final BookRepository bookRepository;
     private final ReadingProgressRepository readingProgressRepository;
+    private ChapterService chapterService;
 
     /**
-     * 无参构造函数，用于IntelliJ服务系统
-     * 通过ApplicationManager获取服务实例
+     * 无参构造:供 IntelliJ 服务容器调用,依赖由容器自动注入(V12 构造器注入改造)。
      */
     public BookServiceImpl() {
-        this.bookRepository = ApplicationManager.getApplication().getService(BookRepository.class);
-        this.readingProgressRepository = ApplicationManager.getApplication().getService(ReadingProgressRepository.class);
+        this(
+            ApplicationManager.getApplication().getService(BookRepository.class),
+            ApplicationManager.getApplication().getService(ReadingProgressRepository.class)
+        );
     }
 
     /**
-     * 构造器注入，用于测试和依赖注入框架
+     * 构造器注入:用于测试与依赖注入,依赖由调用方提供。
      * @param bookRepository 书籍仓库
      * @param readingProgressRepository 阅读进度仓库
      */
@@ -149,9 +151,13 @@ public class BookServiceImpl implements BookService {
     @Override
     public void clearChaptersCache(@Nullable String bookId) {
         try {
-            ChapterService chapterService = ApplicationManager.getApplication().getService(ChapterService.class);
+            ChapterService chapterService = this.chapterService;
             if (chapterService == null) {
-                LOG.warn("清除章节缓存失败：ChapterService 不可用");
+                // 兼容 2 参构造(测试)未注入章节服务的情况,按需获取
+                chapterService = ApplicationManager.getApplication().getService(ChapterService.class);
+            }
+            if (chapterService == null) {
+                LOG.warn("清除章节缓存失败:ChapterService 不可用");
                 return;
             }
 
@@ -162,11 +168,11 @@ public class BookServiceImpl implements BookService {
             } else {
                 Book book = bookRepository.getBook(bookId);
                 if (book != null) {
-                    // 同时清理内存缓存（章节列表）与仓库缓存（章节内容）
+                    // 同时清理内存缓存(章节列表)与仓库缓存(章节内容)
                     chapterService.clearBookCache(book).blockingAwait();
                     LOG.info("已清除书籍章节缓存: " + bookId);
                 } else {
-                    LOG.warn("清除章节缓存失败，未找到书籍: " + bookId);
+                    LOG.warn("清除章节缓存失败,未找到书籍: " + bookId);
                 }
             }
         } catch (Exception e) {

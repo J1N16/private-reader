@@ -70,13 +70,8 @@ public final class FileBookRepository implements BookRepository {
     }
 
     public FileBookRepository() {
-        this.storageRepository = com.intellij.openapi.application.ApplicationManager.getApplication().getService(StorageRepository.class);
-        this.gson = createSecureGson();
-
-        // 清空重试计数Map
-        chapterFetchRetryCount.clear();
-
-        // 启动后台线程，在应用启动后清理和修复损坏的书籍文件
+        this(com.intellij.openapi.application.ApplicationManager.getApplication().getService(StorageRepository.class));
+        // 启动后台线程,在应用启动后清理和修复损坏的书籍文件
         javax.swing.SwingUtilities.invokeLater(() -> {
             try {
                 LOG.info("开始自动检查和修复书籍文件...");

@@ -68,13 +68,13 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
     private MessageBusConnection messageBusConnection;
     private final CompositeDisposable disposables = new CompositeDisposable();
 
-    // 服务相关字段
-    private BookService bookService;
-    private ChapterService chapterService;
-    private NotificationReaderSettings notificationSettings;
-    private ReactiveChapterPreloader chapterPreloader;
+    // 服务相关字段(V12 构造器注入改造:由容器注入,消除惰性 getService)
+    private final BookService bookService;
+    private final ChapterService chapterService;
+    private final NotificationReaderSettings notificationSettings;
+    private final ReactiveChapterPreloader chapterPreloader;
     private final ReactiveSchedulers reactiveSchedulers;
-    private ChapterChangeManager chapterChangeManager;
+    private final ChapterChangeManager chapterChangeManager;
 
     // 阅读视图状态(V11:单一不可变快照,消除多 volatile 字段一致性隐患)
     private final AtomicReference<ReaderViewState> viewStateRef =
@@ -97,12 +97,32 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
     }
 
     /**
-     * 无参构造方法
+     * 无参构造:供 IntelliJ 服务容器调用,依赖由容器自动注入(V12 构造器注入改造)。
      */
     public NotificationServiceImpl() {
+        this(
+            ApplicationManager.getApplication().getService(BookService.class),
+            ApplicationManager.getApplication().getService(ChapterService.class),
+            ApplicationManager.getApplication().getService(NotificationReaderSettings.class),
+            ApplicationManager.getApplication().getService(ReactiveChapterPreloader.class),
+            ApplicationManager.getApplication().getService(ChapterChangeManager.class)
+        );
+    }
+
+    /**
+     * 构造器注入:用于测试与依赖注入,依赖由调用方提供。
+     */
+    public NotificationServiceImpl(BookService bookService, ChapterService chapterService,
+                                   NotificationReaderSettings notificationSettings,
+                                   ReactiveChapterPreloader chapterPreloader,
+                                   ChapterChangeManager chapterChangeManager) {
         LOG.debug("初始化 NotificationServiceImpl");
+        this.bookService = bookService;
+        this.chapterService = chapterService;
+        this.notificationSettings = notificationSettings;
+        this.chapterPreloader = chapterPreloader;
+        this.chapterChangeManager = chapterChangeManager;
         this.reactiveSchedulers = ReactiveSchedulers.getInstance();
-        // 其他服务会在首次使用时延迟初始化
         this.messageBusConnection = ApplicationManager.getApplication().getMessageBus().connect(this);
         this.messageBusConnection.subscribe(CurrentChapterNotifier.TOPIC, new CurrentChapterNotifier() {
             @Override
@@ -112,33 +132,9 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
         });
     }
 
-    /**
-     * 确保服务已初始化
-     */
-    private void ensureServicesInitialized() {
-        if (bookService == null) {
-            bookService = ApplicationManager.getApplication().getService(BookService.class);
-        }
-
-        if (chapterService == null) {
-            chapterService = ApplicationManager.getApplication().getService(ChapterService.class);
-        }
-
-        if (notificationSettings == null) {
-            notificationSettings = ApplicationManager.getApplication().getService(NotificationReaderSettings.class);
-        }
-
-        if (chapterPreloader == null) {
-            chapterPreloader = ApplicationManager.getApplication().getService(ReactiveChapterPreloader.class);
-        }
-        if (chapterChangeManager == null) {
-            chapterChangeManager = ApplicationManager.getApplication().getService(ChapterChangeManager.class);
-        }
-    }
-
     @Override
     public void setCurrentChapterContent(@NotNull String content) {
-        ensureServicesInitialized();
+
         int pageSize = notificationSettings != null ? notificationSettings.getPageSize() : 70; // Use setting for page size
         LOG.debug("NotificationServiceImpl: 设置当前章节内容,使用页面大小: " + pageSize +
                  ", notificationSettings 是否为 null: " + (notificationSettings == null));
@@ -154,7 +150,7 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
 
     @Override
     public int calculateTotalPages(@NotNull String content) {
-        ensureServicesInitialized();
+
         LOG.debug("NotificationServiceImpl: 计算总页数");
         int pageSize = notificationSettings != null ? notificationSettings.getPageSize() : 70; // Use setting for page size
         return paginateContent(content, pageSize).size();
@@ -162,7 +158,7 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
 
     @Override
     public String getPageContent(@NotNull String content, int pageNumber) {
-        ensureServicesInitialized();
+
         LOG.debug("NotificationServiceImpl: 获取页码 " + pageNumber + " 的内容");
         int pageSize = notificationSettings != null ? notificationSettings.getPageSize() : 70; // Use setting for page size
         List<String> pages = paginateContent(content, pageSize);
@@ -175,7 +171,7 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
 
     @Override
     public void showChapterContent(@NotNull Project project, @NotNull String bookId, @NotNull String chapterId, int pageNumber, @NotNull String title, @NotNull String content) {
-        ensureServicesInitialized();
+
         LOG.debug("NotificationServiceImpl: 显示章节内容通知: " + title);
 
         if (content == null || content.isEmpty()) {
@@ -306,7 +302,7 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
 
     @Override
     public void updateNotificationContent(@NotNull Project project, @NotNull String content) {
-        ensureServicesInitialized();
+
         LOG.debug("NotificationServiceImpl: 更新通知内容");
 
         Notification existingNotification = currentNotificationRef.get();
@@ -331,7 +327,7 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
 
     @Override
     public Single<Notification> showError(@NotNull String title, @NotNull String message) {
-        ensureServicesInitialized();
+
         LOG.debug("NotificationServiceImpl: 显示错误: " + title + " - " + message);
         this.isLoadingChapter.set(false); // 清除正在加载章节状态,因为加载已失败
 
@@ -344,7 +340,7 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
 
     @Override
     public Single<Notification> showInfo(@NotNull String title, @NotNull String message) {
-        ensureServicesInitialized();
+
         LOG.debug("NotificationServiceImpl: 显示信息: " + title + " - " + message);
 
         Notification notification = NotificationDisplayManager.showInfo(title, message);
@@ -356,7 +352,7 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
 
     @Override
     public Completable closeAllNotificationsReactive() {
-        ensureServicesInitialized();
+
         LOG.debug("NotificationServiceImpl (Reactive): 关闭所有通知");
         // This reactive method might be used by other parts of the application
         // It should not interfere with the state managed by the notification bar mode
@@ -370,7 +366,7 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
 
     @Override
     public void closeAllNotifications() {
-        ensureServicesInitialized();
+
         LOG.debug("NotificationServiceImpl: 关闭所有通知");
         closeCurrentNotificationInternal();
 
@@ -621,7 +617,7 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
     public Single<Notification> showChapterContent(@NotNull Book book, @NotNull String chapterId, @NotNull String content) {
         return Single.defer(() -> chapterService.getChapterTitle(book.getId(), chapterId)
                 .flatMap(title -> {
-                    ensureServicesInitialized();
+
                     LOG.info("[通知栏模式] (Reactive) 显示章节内容: " + book.getTitle() + " - " + chapterId + ", 内容长度: " + content.length());
 
                     // 关闭当前通知
@@ -818,7 +814,7 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
             LOG.warn("[通知栏模式] 正在加载章节内容,忽略章节导航至末尾操作。");
             return;
         }
-        ensureServicesInitialized();
+
         LOG.info("[通知栏模式] 导航到章节的最后一页,方向: " + direction);
 
         ReaderViewState state = getViewState();
@@ -1021,7 +1017,7 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
      * @param chapterIndex 当前章节索引
      */
     private void triggerChapterPreload(@NotNull Book book, int chapterIndex) {
-        ensureServicesInitialized();
+
 
         if (chapterPreloader == null) {
             LOG.warn("[通知栏模式] ReactiveChapterPreloader 未初始化,无法预加载章节");
@@ -1039,7 +1035,7 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
     }
 
     private void handleChapterChangedEvent(Book changedBook, Chapter newChapter) {
-        ensureServicesInitialized(); // 确保所有依赖的服务都已初始化
+ // 确保所有依赖的服务都已初始化
         if (chapterChangeManager.getLastEventSource() != ChapterChangeEventSource.READER_PANEL) {
             return;
         }

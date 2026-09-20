@@ -55,14 +55,32 @@ public class NotificationBarModeService implements Disposable, NotificationReade
     }
 
     public NotificationBarModeService() {
-        LOG.info("NotificationBarModeService 构造函数被调用");
+        this(
+            ApplicationManager.getApplication().getService(ReaderModeSettings.class),
+            ApplicationManager.getApplication().getService(NotificationService.class),
+            ApplicationManager.getApplication().getService(ChapterService.class),
+            ApplicationManager.getApplication().getService(BookService.class),
+            ApplicationManager.getApplication().getService(ReadingProgressRepository.class),
+            ApplicationManager.getApplication().getService(NotificationReaderSettings.class)
+        );
+    }
 
-        this.readerModeSettings = ApplicationManager.getApplication().getService(ReaderModeSettings.class);
-        this.notificationService = ApplicationManager.getApplication().getService(NotificationService.class);
-        this.chapterService = ApplicationManager.getApplication().getService(ChapterService.class);
-        this.bookService = ApplicationManager.getApplication().getService(BookService.class);
-        this.readingProgressRepository = ApplicationManager.getApplication().getService(ReadingProgressRepository.class);
-        this.notificationReaderSettings = ApplicationManager.getApplication().getService(NotificationReaderSettings.class);
+    /**
+     * 构造器注入:用于测试与依赖注入,依赖由调用方提供(V12 构造器注入改造)。
+     */
+    public NotificationBarModeService(ReaderModeSettings readerModeSettings,
+                                      NotificationService notificationService,
+                                      ChapterService chapterService,
+                                      BookService bookService,
+                                      ReadingProgressRepository readingProgressRepository,
+                                      NotificationReaderSettings notificationReaderSettings) {
+        LOG.info("NotificationBarModeService 构造函数被调用");
+        this.readerModeSettings = readerModeSettings;
+        this.notificationService = notificationService;
+        this.chapterService = chapterService;
+        this.bookService = bookService;
+        this.readingProgressRepository = readingProgressRepository;
+        this.notificationReaderSettings = notificationReaderSettings;
 
         ApplicationManager.getApplication().getMessageBus().connect(this)
             .subscribe(NotificationReaderSettingsListener.TOPIC, this);
@@ -313,7 +331,7 @@ public class NotificationBarModeService implements Disposable, NotificationReade
         }
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             try {
-                BookService bookService = ApplicationManager.getApplication().getService(BookService.class);
+                BookService bookService = this.bookService; // V12:构造器注入,替代按需 getService
                 if (bookService != null) {
                     bookService.getBookById(bookId)
                         .subscribeOn(Schedulers.io())

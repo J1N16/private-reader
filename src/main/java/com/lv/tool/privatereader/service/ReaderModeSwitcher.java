@@ -25,32 +25,41 @@ public final class ReaderModeSwitcher implements ReaderModeSettingsListener, Dis
     private static final String TOOL_WINDOW_ID = "PrivateReader"; // Restore constant
 
     // Restore fields
-    private NotificationService notificationService;
-    private ReaderModeSettings readerModeSettings;
-    private NotificationReaderSettings notificationReaderSettings;
+    private final NotificationService notificationService;
+    private final ReaderModeSettings readerModeSettings;
+    private final NotificationReaderSettings notificationReaderSettings;
     private MessageBusConnection connection;
     private boolean initialized = false;
 
     public ReaderModeSwitcher() {
-        LOG.info("ReaderModeSwitcher constructor started."); // Cleaned up log message
-        // --- RESTORING CONSTRUCTOR LOGIC ---
+        this(
+            ApplicationManager.getApplication().getService(NotificationService.class),
+            ApplicationManager.getApplication().getService(ReaderModeSettings.class),
+            ApplicationManager.getApplication().getService(NotificationReaderSettings.class)
+        );
+    }
+
+    /**
+     * 构造器注入:用于测试与依赖注入,依赖由调用方提供(V12 构造器注入改造)。
+     */
+    public ReaderModeSwitcher(NotificationService notificationService,
+                              ReaderModeSettings readerModeSettings,
+                              NotificationReaderSettings notificationReaderSettings) {
+        LOG.info("ReaderModeSwitcher constructor started.");
+        this.notificationService = notificationService;
+        this.readerModeSettings = readerModeSettings;
+        this.notificationReaderSettings = notificationReaderSettings;
+        // --- RESTORED CONSTRUCTOR LOGIC ---
         try {
-            notificationService = ApplicationManager.getApplication().getService(NotificationService.class);
-            LOG.info("NotificationService obtained: " + (notificationService != null));
             if (notificationService == null) {
                  LOG.error("NotificationService is null during ReaderModeSwitcher initialization.");
-                 // Decide if this is critical
             }
 
-            readerModeSettings = ApplicationManager.getApplication().getService(ReaderModeSettings.class);
-            LOG.info("ReaderModeSettings obtained: " + (readerModeSettings != null));
-             if (readerModeSettings == null) {
+            if (readerModeSettings == null) {
                  LOG.error("ReaderModeSettings is null during ReaderModeSwitcher initialization. Aborting initialization.");
                  return; // Critical dependency
             }
 
-            notificationReaderSettings = ApplicationManager.getApplication().getService(NotificationReaderSettings.class);
-            LOG.info("NotificationReaderSettings obtained: " + (notificationReaderSettings != null));
             if (notificationReaderSettings == null) {
                 LOG.warn("NotificationReaderSettings is null during ReaderModeSwitcher initialization. Auto-read feature will be disabled.");
             }
