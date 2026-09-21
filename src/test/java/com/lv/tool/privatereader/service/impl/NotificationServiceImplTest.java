@@ -8,6 +8,7 @@ import com.intellij.util.messages.MessageBusConnection;
 import com.lv.tool.privatereader.async.ReactiveSchedulers;
 import com.lv.tool.privatereader.events.ChapterChangeManager;
 import com.lv.tool.privatereader.model.Book;
+import com.lv.tool.privatereader.repository.ReadingProgressRepository;
 import com.lv.tool.privatereader.service.BookService;
 import com.lv.tool.privatereader.service.ChapterService;
 import com.lv.tool.privatereader.service.impl.notification.NotificationDisplayManager;
@@ -99,7 +100,8 @@ class NotificationServiceImplTest {
                 .thenReturn(mock(com.intellij.notification.Notification.class));
 
         // 5. 构造被测服务(依赖全部注入)
-        service = new NotificationServiceImpl(bookService, chapterService, settings, preloader, chapterChangeManager);
+        service = new NotificationServiceImpl(bookService, chapterService, settings, preloader, chapterChangeManager,
+                mock(ReadingProgressRepository.class));
     }
 
     @AfterEach

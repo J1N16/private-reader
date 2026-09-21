@@ -96,6 +96,23 @@ public class NotificationBarModeService implements Disposable, NotificationReade
         this.project = project;
     }
 
+    // --- 包级测试辅助方法(V14:参照 NetworkUtilsTest 的 setCachedResultForTest 先例) ---
+
+    /** 当前书籍ID(包级只读,供单元测试断言) */
+    String getCurrentBookIdForTest() {
+        return currentBookId;
+    }
+
+    /** 当前章节ID(包级只读,供单元测试断言) */
+    String getCurrentChapterIdForTest() {
+        return currentChapterId;
+    }
+
+    /** 当前页码(包级只读,供单元测试断言) */
+    int getCurrentPageNumberForTest() {
+        return currentPageNumber;
+    }
+
     /**
      * Activates the notification bar reading mode.
      * @param bookId The ID of the book to read.

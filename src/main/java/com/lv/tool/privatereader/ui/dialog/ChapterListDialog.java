@@ -165,12 +165,7 @@ public class ChapterListDialog extends DialogWrapper {
         infoPanel.setBorder(JBUI.Borders.empty(0, 0, 10, 0));
 
         // 显示书籍信息
-        infoLabel = new JLabel(String.format("<html>书名：%s<br>作者：%s<br>进度：%d/%d 章 (%.1f%%)</html>",
-            book.getTitle(),
-            book.getAuthor(),
-            book.getCurrentChapterIndex(),
-            book.getTotalChapters(),
-            book.getReadingProgress() * 100));
+        infoLabel = new JLabel(ChapterListDialogSupport.buildInfoLabel(book));
         infoPanel.add(infoLabel, BorderLayout.CENTER);
 
         // 不再创建按钮面板和刷新按钮
@@ -211,28 +206,15 @@ public class ChapterListDialog extends DialogWrapper {
         // 首先检查Book对象的cachedChapters属性
         java.util.List<NovelParser.Chapter> bookCachedChapters = book.getCachedChapters();
         if (bookCachedChapters != null && !bookCachedChapters.isEmpty()) {
-            LOG.info("直接使用Book对象的缓存章节列表：书籍=" + book.getTitle() + ", 章节数量=" + bookCachedChapters.size());
+            LOG.info("直接使用Book对象的缓存章节列表:书籍=" + book.getTitle() + ", 章节数量=" + bookCachedChapters.size());
             chapterList.setListData(bookCachedChapters.toArray(new NovelParser.Chapter[0]));
-
-            // 尝试选择上次阅读的章节
-            String lastChapterId = book.getLastReadChapterId();
-            if (lastChapterId != null) {
-                for (int i = 0; i < bookCachedChapters.size(); i++) {
-                    if (lastChapterId.equals(bookCachedChapters.get(i).url())) {
-                        chapterList.setSelectedIndex(i);
-                        chapterList.ensureIndexIsVisible(i);
-                        LOG.debug("已选择上次阅读的章节：索引=" + i + ", 标题=" + bookCachedChapters.get(i).title());
-                        break;
-                    }
-                }
-            }
-
+            selectLastReadChapter(bookCachedChapters);
             updateInfoLabel(bookCachedChapters);
             setLoading(false);
             isLoading = false;
             return;
         } else {
-            LOG.info("Book对象的缓存章节列表为空，尝试从服务获取");
+            LOG.info("Book对象的缓存章节列表为空,尝试从服务获取");
         }
 
         // 检查网络连接
@@ -242,21 +224,9 @@ public class ChapterListDialog extends DialogWrapper {
             // 尝试使用缓存的章节列表
             java.util.List<NovelParser.Chapter> cachedChapters = book.getCachedChapters();
             if (cachedChapters != null && !cachedChapters.isEmpty()) {
-                LOG.info("使用缓存的章节列表：书籍=" + book.getTitle() + ", 章节数量=" + cachedChapters.size());
+                LOG.info("使用缓存的章节列表:书籍=" + book.getTitle() + ", 章节数量=" + cachedChapters.size());
                 chapterList.setListData(cachedChapters.toArray(new NovelParser.Chapter[0]));
-
-                // 尝试选择上次阅读的章节
-                String lastChapterId = book.getLastReadChapterId();
-                if (lastChapterId != null) {
-                    for (int i = 0; i < cachedChapters.size(); i++) {
-                        if (lastChapterId.equals(cachedChapters.get(i).url())) {
-                            chapterList.setSelectedIndex(i);
-                            chapterList.ensureIndexIsVisible(i);
-                            break;
-                        }
-                    }
-                }
-
+                selectLastReadChapter(cachedChapters);
                 updateInfoLabel(cachedChapters);
                 setLoading(false);
                 isLoading = false;
@@ -382,21 +352,9 @@ public class ChapterListDialog extends DialogWrapper {
                     // 尝试使用缓存的章节列表
                     java.util.List<NovelParser.Chapter> cachedChapters = book.getCachedChapters();
                     if (cachedChapters != null && !cachedChapters.isEmpty()) {
-                        LOG.info("加载失败，使用缓存的章节列表：书籍=" + book.getTitle() + ", 章节数量=" + cachedChapters.size());
+                        LOG.info("加载失败,使用缓存的章节列表:书籍=" + book.getTitle() + ", 章节数量=" + cachedChapters.size());
                         chapterList.setListData(cachedChapters.toArray(new NovelParser.Chapter[0]));
-
-                        // 尝试选择上次阅读的章节
-                        String lastChapterId = book.getLastReadChapterId();
-                        if (lastChapterId != null) {
-                            for (int i = 0; i < cachedChapters.size(); i++) {
-                                if (lastChapterId.equals(cachedChapters.get(i).url())) {
-                                    chapterList.setSelectedIndex(i);
-                                    chapterList.ensureIndexIsVisible(i);
-                                    break;
-                                }
-                            }
-                        }
-
+                        selectLastReadChapter(cachedChapters);
                         updateInfoLabel(cachedChapters);
 
                         Messages.showWarningDialog(project,
@@ -422,12 +380,7 @@ public class ChapterListDialog extends DialogWrapper {
     private void updateInfoLabel(List<NovelParser.Chapter> chapters) {
         if (chapters != null && !chapters.isEmpty()) {
             book.setTotalChapters(chapters.size());
-            infoLabel.setText(String.format("<html>书名：%s<br>作者：%s<br>进度：%d/%d 章 (%.1f%%)</html>",
-                book.getTitle(),
-                book.getAuthor(),
-                book.getCurrentChapterIndex(),
-                book.getTotalChapters(),
-                book.getReadingProgress() * 100));
+            infoLabel.setText(ChapterListDialogSupport.buildInfoLabel(book));
         }
     }
 
@@ -658,43 +611,33 @@ public class ChapterListDialog extends DialogWrapper {
     }
 
     /**
-     * 尝试选择上次阅读的章节
+     * 尝试选择上次阅读的章节(委托纯逻辑辅助类,行为保持与重构前一致)。
+     * <p>
+     * 优先上次阅读章节,否则选择第一章;
+     * 章节列表为空时不改变当前选中。
      *
      * @param chapters 章节列表
      */
     private void selectLastReadChapter(List<NovelParser.Chapter> chapters) {
         if (chapters == null || chapters.isEmpty()) {
-            LOG.debug("无法选择上次阅读的章节：章节列表为空");
+            LOG.debug("无法选择上次阅读的章节:章节列表为空");
             return;
         }
 
-        // 获取上次阅读的章节ID
         String lastChapterId = book.getLastReadChapterId();
         if (lastChapterId != null) {
-            LOG.debug("尝试选择上次阅读的章节：章节ID=" + lastChapterId);
-
-            // 在章节列表中查找上次阅读的章节
-            for (int i = 0; i < chapters.size(); i++) {
-                if (lastChapterId.equals(chapters.get(i).url())) {
-                    // 选择章节
-                    chapterList.setSelectedIndex(i);
-                    chapterList.ensureIndexIsVisible(i);
-                    LOG.debug("已选择上次阅读的章节：索引=" + i + ", 标题=" + chapters.get(i).title());
-                    return;
-                }
-            }
-
-            LOG.warn("未找到上次阅读的章节：章节ID=" + lastChapterId);
+            LOG.debug("尝试选择上次阅读的章节:章节ID=" + lastChapterId);
         } else {
             LOG.debug("没有上次阅读的章节记录");
         }
 
-        // 如果没有找到上次阅读的章节，选择第一个章节
-        if (!chapters.isEmpty()) {
-            chapterList.setSelectedIndex(0);
-            chapterList.ensureIndexIsVisible(0);
-            LOG.debug("选择第一个章节：标题=" + chapters.get(0).title());
+        int index = ChapterListDialogSupport.resolveSelectIndex(chapters, lastChapterId);
+        if (index < 0) {
+            return;
         }
+        chapterList.setSelectedIndex(index);
+        chapterList.ensureIndexIsVisible(index);
+        LOG.debug("已选择章节:索引=" + index + ", 标题=" + chapters.get(index).title());
     }
 
     /**

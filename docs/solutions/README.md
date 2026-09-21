@@ -13,7 +13,7 @@
 ```
 docs/solutions/
 ├── README.md              ← 本文件:总索引 / 单一事实源
-├── OPTIMIZATION_V13.md    ← 最新优化轮次(V14 起顺延)
+├── OPTIMIZATION_V14.md    ← 最新优化轮次(V15 起顺延)
 ├── archive/               ← 已完成轮次的详细记录(12 份)
 └── legacy/                ← 已废弃的 Reactor 时代文档(仅存档)
 ```
@@ -35,6 +35,7 @@ docs/solutions/
 | V11 | 2026-09-18 | 3.0.0 | 通知展示拆分→NotificationDisplayManager、多 volatile 字段→ReaderViewState、正则预编译(236→248) | 248 | 31.49% |
 | V12 | 2026-09-18 | 3.0.0 | 8 个核心服务类构造器注入改造,移除 `ensureServicesInitialized` 惰性机制 | 249 | 31.48% |
 | **V13** | **2026-09-20** | **3.0.0** | **导航流水线去重、NetworkUtils 并行探测+30s TTL、FileBookRepository 1295→762 行职责拆分、service 层补测、getChapterTitle NPE 修复、阈值 0.27→0.30(249→270)** | **270** | **33.54%** |
+| **V14** | **2026-09-20** | **3.0.0** | **P0/P1 落地:NotificationBarModeService 0%→74.79% 补测、NotificationServiceImpl 阅读仓库注入化收尾、NotificationDisplayManager 回调化+纯函数提取、ChapterListDialog 三处重复收敛+纯逻辑提取、RepositoryModule 评估保留(270→299)** | **299** | **36.35%** |
 
 ## 三、当前状态(单一事实源)
 
@@ -46,18 +47,18 @@ docs/solutions/
 - **响应式**:统一 RxJava3(移除 Reactor);消除 UI 线程 `.block()` 与阻塞轮询/EDT 内 sleep
 - **线程安全**:ConcurrentHashMap/CopyOnWriteArrayList、`toSerialized()`、ReaderViewState 不可变快照
 - **文件仓储**:`FileBookRepository` 拆分出 `BookJsonCodec`/`BookIndexStore`/`BookDetailsIo`(1295→762 行)
-- **工程化**:JaCoCo 覆盖率护栏(当前 **0.30**)+ GitHub Actions CI(构建/测试/打包/`verifyPlugin`)
+- **注入收尾**:`NotificationServiceImpl` 阅读进度仓库四入构造器注入(消除按需 getService);`NotificationDisplayManager` 回调化+纯函数提取(展示层不再直接依赖容器)
+- **工程化**:JaCoCo 覆盖率护栏(当前 **0.30**,实测 36.35%)+ GitHub Actions CI(构建/测试/打包/`verifyPlugin`)
 
 ### 3.2 遗留事项(按文档轮次汇总)
 
 | 事项 | 来源 | 优先级 |
 |------|------|--------|
-| `NotificationServiceImpl` 仍有 ~1174 行,可再拆 `ChapterEventProcessor` | V11/V13 遗留 | 低 |
-| `NotificationBarModeService`(service 包,~458 行)0% 覆盖,可构造器注入 mock 补测 | V13 遗留 | 中 |
-| `ui/*`(actions/dialog/settings)依赖 EDT/Swing,0 覆盖,需真实 IDE 或 UI 测试框架 | V9-V12 遗留 | 中 |
-| `storage` 主体、`repository` 实现类、`initialization` 为低覆盖保留方向 | V9/V10 遗留 | 低 |
-| `RepositoryModule` 聚合仍 getService 风格,可评估是否保留 | V12 遗留 | 低 |
-| 覆盖率达 36%+ 时阈值可上调至 0.33(当前 33.54%,余量 3.5pp) | V13 建议 | 低 |
+| `NotificationServiceImpl` 仍有 ~1174 行,可再拆 `ChapterEventProcessor` | V11/V13/V14 遗留 | 低 |
+| `ui/*`(actions/dialog/settings/ReaderPanel)依赖 EDT/Swing,0 覆盖,需真实 IDE 或 UI 测试框架 | V9-V14 遗留 | 中 |
+| `storage` 主体、`initialization` 为低覆盖保留方向 | V9/V10 遗留 | 低 |
+| `NotificationDisplayManager.showReadingNotification` 真实通知创建路径未覆盖(需 mockStatic 门面或 GUI 冒烟) | V14 遗留 | 中 |
+| 覆盖率实测 36.35%,阈值可上调至 0.33(余量 6.35pp) | V14 建议 | 低 |
 | `verifyPlugin` 本地需联网下载 IDE 263 平台;**CI 的 verify-plugin job 有外网正常执行** | V13 遗留 | 环境 |
 
 ### 3.3 覆盖率阈值历史
@@ -70,11 +71,11 @@ docs/solutions/
 
 ## 四、指标演进
 
-| 指标 | V8 | V9 | V10 | V11 | V12 | V13 |
-|------|----|----|----|----|----|----|
-| LINE | 18.24% | 28.02% | 31.02% | 31.49% | 31.48% | **33.54%** |
-| 测试数 | 99 | 209 | 236 | 248 | 249 | **270** |
-| 总行数 | 7581 | 7581 | 7581 | 7692 | 7692 | 7672 |
+| 指标 | V8 | V9 | V10 | V11 | V12 | V13 | V14 |
+|------|----|----|----|----|----|----|----|
+| LINE | 18.24% | 28.02% | 31.02% | 31.49% | 31.48% | 33.54% | **36.35%** |
+| 测试数 | 99 | 209 | 236 | 248 | 249 | 270 | **299** |
+| 总行数 | 7581 | 7581 | 7581 | 7692 | 7692 | 7672 | 7653 |
 
 > 注:总行数为各轮报告的统计口径,代码持续变化,精确值以 JaCoCo 报告为准。
 
@@ -107,7 +108,8 @@ sed -i 's|](\./OPTIMIZATION|](../OPTIMIZATION|g' archive/OPTIMIZATION_V{n}.md
 
 | 文档 | 说明 |
 |------|------|
-| `OPTIMIZATION_V13.md` | 最新轮次:导航去重 / 网络缓存 / 仓储拆分 / service 补测(V13) |
+| `OPTIMIZATION_V14.md` | 最新轮次:通知栏服务补测 / 注入收尾 / 展示层回调化 / 章节列表去重(V14) |
+| `OPTIMIZATION_V13.md` | 导航去重 / 网络缓存 / 仓储拆分 / service 补测(V13) |
 
 ### archive(已完成轮次)
 

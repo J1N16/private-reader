@@ -7,7 +7,6 @@ import com.intellij.notification.NotificationType;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
 import com.lv.tool.privatereader.config.PrivateReaderConfig;
-import com.lv.tool.privatereader.service.NotificationService;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -34,8 +33,15 @@ public final class NotificationDisplayManager {
      * @param content      页面内容(未清理 HTML)
      * @param pageIndex    当前页索引(0 基,用于按钮与页码显示)
      * @param pages       当前分页结果(用于按钮可用性判断)
+     * @param pageIndex    当前页索引(0 基,用于按钮与页码显示)
+     * @param pages       当前分页结果(用于按钮可用性判断)
      * @param showButtons 是否显示导航操作按钮
      * @param showPageNumbers 是否在标题显示页码
+     * @param prevPageAction 上一页回调(可为 null)
+     * @param nextPageAction 下一页回调(可为 null)
+     * @param prevChapterAction 上一章回调(可为 null)
+     * @param nextChapterAction 下一章回调(可为 null)
+     * @param switchBackAction  返回阅读器回调(可为 null)
      * @return 已显示的通知
      */
     @NotNull
@@ -45,16 +51,13 @@ public final class NotificationDisplayManager {
                                                        int pageIndex,
                                                        @NotNull java.util.List<String> pages,
                                                        boolean showButtons,
-                                                       boolean showPageNumbers) {
-        String displayTitle = title;
-        if (pageIndex == 0) {
-            displayTitle = title;
-        } else {
-            displayTitle = "阅读中";
-        }
-        if (showPageNumbers) {
-            displayTitle += String.format(" (第%d页/共%d页)", pageIndex + 1, pages.size());
-        }
+                                                       boolean showPageNumbers,
+                                                       @Nullable Runnable prevPageAction,
+                                                       @Nullable Runnable nextPageAction,
+                                                       @Nullable Runnable prevChapterAction,
+                                                       @Nullable Runnable nextChapterAction,
+                                                       @Nullable Runnable switchBackAction) {
+        String displayTitle = buildDisplayTitle(title, pageIndex, pages.size(), showPageNumbers);
 
         String cleanContent = cleanHtmlTags(content);
         Notification notification = NotificationGroupManager.getInstance()
@@ -63,7 +66,8 @@ public final class NotificationDisplayManager {
                 .setTitle(displayTitle);
 
         if (showButtons) {
-            addReadingActions(project, notification, pageIndex, pages.size());
+            addReadingActions(notification, pageIndex, pages.size(),
+                    prevPageAction, nextPageAction, prevChapterAction, nextChapterAction, switchBackAction);
         }
 
         com.intellij.notification.Notifications.Bus.notify(notification, project);
@@ -71,53 +75,73 @@ public final class NotificationDisplayManager {
     }
 
     /**
-     * 添加阅读通知的操作按钮:上一页/下一页(按可用性),上一章/下一章,返回阅读器。
+     * 构建通知展示标题(纯函数,便于单元测试)。
+     * <p>
+     * 规则:首页显示原标题,后续页显示"阅读中";开启页码显示时追加 "(第X页/共Y页)"。
+     *
+     * @param title          原始标题(如 "书名 - 章节名")
+     * @param pageIndex      当前页索引(0 基)
+     * @param totalPages     总页数
+     * @param showPageNumbers 是否显示页码
+     * @return 展示标题
      */
-    private static void addReadingActions(@NotNull Project project,
-                                          @NotNull Notification notification,
+    @NotNull
+    public static String buildDisplayTitle(@NotNull String title, int pageIndex, int totalPages, boolean showPageNumbers) {
+        String displayTitle = (pageIndex == 0) ? title : "阅读中";
+        if (showPageNumbers) {
+            displayTitle += String.format(" (第%d页/共%d页)", pageIndex + 1, totalPages);
+        }
+        return displayTitle;
+    }
+
+    /**
+     * 判断上一页按钮是否可用(纯函数)。
+     *
+     * @param pageIndex 当前页索引(0 基)
+     * @return 非第一页时可用
+     */
+    public static boolean isPrevPageActionEnabled(int pageIndex) {
+        return pageIndex > 0;
+    }
+
+    /**
+     * 判断下一页按钮是否可用(纯函数)。
+     *
+     * @param pageIndex  当前页索引(0 基)
+     * @param totalPages 总页数
+     * @return 非最后一页时可用
+     */
+    public static boolean isNextPageActionEnabled(int pageIndex, int totalPages) {
+        return pageIndex < totalPages - 1;
+    }
+
+    /**
+     * 添加阅读通知的操作按钮:上一页/下一页(按可用性),上一章/下一章,返回阅读器。
+     * 动作回调由调用方提供,本类不再直接依赖 IntelliJ 服务容器(消除 getService 硬编码)。
+     */
+    private static void addReadingActions(@NotNull Notification notification,
                                           int pageIndex,
-                                          int pageCount) {
-        if (pageIndex > 0) {
-            notification.addAction(NotificationAction.createSimple("上一页", () -> showPrevPage(project)));
+                                          int pageCount,
+                                          @Nullable Runnable prevPageAction,
+                                          @Nullable Runnable nextPageAction,
+                                          @Nullable Runnable prevChapterAction,
+                                          @Nullable Runnable nextChapterAction,
+                                          @Nullable Runnable switchBackAction) {
+        if (isPrevPageActionEnabled(pageIndex) && prevPageAction != null) {
+            notification.addAction(NotificationAction.createSimple("上一页", () -> prevPageAction.run()));
         }
-        if (pageIndex < pageCount - 1) {
-            notification.addAction(NotificationAction.createSimple("下一页", () -> showNextPage(project)));
+        if (isNextPageActionEnabled(pageIndex, pageCount) && nextPageAction != null) {
+            notification.addAction(NotificationAction.createSimple("下一页", () -> nextPageAction.run()));
         }
-        notification.addAction(NotificationAction.createSimple("上一章", () -> navigateChapter(project, -1)));
-        notification.addAction(NotificationAction.createSimple("下一章", () -> navigateChapter(project, 1)));
-        notification.addAction(NotificationAction.createSimple("返回阅读器", () -> switchBackToReader()));
-    }
-
-    private static void showPrevPage(@NotNull Project project) {
-        NotificationService service = ApplicationManager.getApplication().getService(NotificationService.class);
-        if (service != null) {
-            service.showPrevPage(project);
+        if (prevChapterAction != null) {
+            notification.addAction(NotificationAction.createSimple("上一章", () -> prevChapterAction.run()));
         }
-    }
-
-    private static void showNextPage(@NotNull Project project) {
-        NotificationService service = ApplicationManager.getApplication().getService(NotificationService.class);
-        if (service != null) {
-            service.showNextPage(project);
+        if (nextChapterAction != null) {
+            notification.addAction(NotificationAction.createSimple("下一章", () -> nextChapterAction.run()));
         }
-    }
-
-    private static void navigateChapter(@NotNull Project project, int direction) {
-        NotificationService service = ApplicationManager.getApplication().getService(NotificationService.class);
-        if (service != null) {
-            service.navigateChapter(project, direction);
+        if (switchBackAction != null) {
+            notification.addAction(NotificationAction.createSimple("返回阅读器", () -> switchBackAction.run()));
         }
-    }
-
-    private static void switchBackToReader() {
-        ApplicationManager.getApplication().invokeLater(() -> {
-            com.lv.tool.privatereader.settings.ReaderModeSettings settings =
-                    ApplicationManager.getApplication()
-                            .getService(com.lv.tool.privatereader.settings.ReaderModeSettings.class);
-            if (settings != null) {
-                settings.setNotificationMode(false);
-            }
-        });
     }
 
     /**
