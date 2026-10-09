@@ -20,6 +20,7 @@ import io.reactivex.rxjava3.subjects.BehaviorSubject;
 import io.reactivex.rxjava3.subjects.PublishSubject;
 import io.reactivex.rxjava3.subjects.Subject;
 
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.function.BiConsumer;
@@ -297,11 +298,22 @@ public class ReaderViewModel implements Disposable {
     }
     
     private void updateInitialState(List<Book> books, String selectedBookId) {
-        updateState(state -> state.toBuilder()
-                .isLoadingBooks(false)
-                .books(books)
-                .selectedBookId(selectedBookId)
-                .build());
+        updateState(state -> {
+            ReaderUiState.Builder builder = state.toBuilder()
+                    .isLoadingBooks(false)
+                    .books(books)
+                    .selectedBookId(selectedBookId);
+            if (selectedBookId == null) {
+                // 书架为空(例如删除了最后一本书):清空目录列表与章节内容
+                builder.chapters(Collections.emptyList())
+                        .content("")
+                        .currentChapterTitle("")
+                        .selectedChapterId(null)
+                        .isLoadingChapters(false)
+                        .isLoadingContent(false);
+            }
+            return builder.build();
+        });
         if (selectedBookId != null) {
             loadChaptersForBook(selectedBookId, null);
         }

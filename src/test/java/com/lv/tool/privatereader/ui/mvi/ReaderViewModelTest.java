@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -273,6 +274,60 @@ class ReaderViewModelTest {
         } finally {
             stateSubscription.dispose();
         }
+    }
+
+    @Test
+    void deletingLastBookClearsChaptersAndContent() throws InterruptedException {
+        Book book = book("book-1", "测试书籍", 100L);
+        book.updateReadingProgress("chapter-1", 0, 1);
+        NovelParser.Chapter chapter = chapter("第一章", "chapter-1");
+
+        // 用可变集合模拟书架:初始有书,删除后清空。所有 stub 均在异步流程启动前完成,
+        // 避免测试线程与 RxJava io 线程争用 Mockito 的 stubbing 状态。
+        List<Book> shelf = new java.util.ArrayList<>();
+        shelf.add(book);
+        when(bookService.getAllBooks()).thenAnswer(invocation -> Observable.fromIterable(new java.util.ArrayList<>(shelf)));
+        when(bookService.getLastReadBook())
+                .thenAnswer(invocation -> shelf.isEmpty() ? Maybe.empty() : Maybe.just(book));
+        when(bookService.getBookById("book-1")).thenReturn(Single.just(book));
+        when(chapterService.getChapterList(book)).thenReturn(Single.just(List.of(chapter)));
+        when(chapterService.getChapterContent(book, "chapter-1")).thenReturn(Single.just("第一章正文"));
+        when(bookService.saveReadingProgress(any(Book.class), anyString(), anyString(), anyInt()))
+                .thenReturn(Completable.complete());
+        when(bookService.removeBook(book)).thenReturn(Single.just(true));
+        viewModel = new ReaderViewModel(bookService, chapterService, null, notificationService);
+
+        // 先加载出一本书及其章节内容
+        awaitState(stateLatch -> {
+            Disposable disposable = viewModel.getState().subscribe(next -> {
+                if ("book-1".equals(next.getSelectedBookId())
+                        && "第一章正文".equals(next.getContent())) {
+                    stateLatch.set(next);
+                }
+            });
+            viewModel.processIntent(new IReaderIntent.LoadInitialData());
+            return disposable;
+        });
+
+        // 删除最后一本书 -> 书架为空
+        shelf.clear();
+
+        ReaderUiState state = awaitState(stateLatch -> {
+            Disposable disposable = viewModel.getState().subscribe(next -> {
+                if (next.getBooks().isEmpty() && !next.isLoadingBooks()) {
+                    stateLatch.set(next);
+                }
+            });
+            viewModel.processIntent(new IReaderIntent.DeleteBook("book-1"));
+            return disposable;
+        });
+
+        assertTrue(state.getBooks().isEmpty());
+        assertNull(state.getSelectedBookId());
+        assertTrue(state.getChapters().isEmpty(), "书架为空时目录列表应被清空");
+        assertNull(state.getSelectedChapterId());
+        assertEquals("", state.getContent(), "书架为空时章节内容应被清空");
+        assertEquals("", state.getCurrentChapterTitle());
     }
 
     private ReaderUiState awaitState(StateSubscription subscription) throws InterruptedException {
