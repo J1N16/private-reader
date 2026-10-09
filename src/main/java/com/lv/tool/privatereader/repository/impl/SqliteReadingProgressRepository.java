@@ -13,7 +13,8 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Timestamp;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Optional;
 
 /**
@@ -25,35 +26,43 @@ public final class SqliteReadingProgressRepository implements ReadingProgressRep
     private static final Logger LOG = Logger.getInstance(SqliteReadingProgressRepository.class);
     private final DatabaseManager databaseManager;
 
+    /**
+     * 上次阅读时间的人类可读格式(本地时间),例如 "2026-01-01 12:30:45.123"。
+     * 不使用 epoch 毫秒时间戳,便于直接查看数据库。
+     */
+    private static final DateTimeFormatter LAST_READ_TIME_FORMATTER =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS");
+
     // Using UPSERT (ON CONFLICT DO UPDATE) for SQLite
     // Ensure book_id is the primary key or has a unique index for this to work correctly.
     private static final String UPSERT_PROGRESS_SQL = """
             INSERT INTO reading_progress (
-                book_id, last_read_chapter_id, last_read_chapter_title,
-                last_read_position, last_read_page, is_finished, last_read_timestamp
+                book_id, book_title, last_read_chapter_id, last_read_chapter_title,
+                last_read_position, last_read_page, is_finished, last_read_time
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(book_id) DO UPDATE SET
+                book_title = excluded.book_title,
                 last_read_chapter_id = excluded.last_read_chapter_id,
                 last_read_chapter_title = excluded.last_read_chapter_title,
                 last_read_position = excluded.last_read_position,
                 last_read_page = excluded.last_read_page,
                 is_finished = excluded.is_finished,
-                last_read_timestamp = excluded.last_read_timestamp;
+                last_read_time = excluded.last_read_time;
             """;
 
     private static final String GET_PROGRESS_SQL = """
-            SELECT book_id, last_read_chapter_id, last_read_chapter_title,
-                   last_read_position, last_read_page, is_finished, last_read_timestamp
+            SELECT book_id, book_title, last_read_chapter_id, last_read_chapter_title,
+                   last_read_position, last_read_page, is_finished, last_read_time
             FROM reading_progress
             WHERE book_id = ?;
             """;
 
     private static final String GET_LAST_READ_SQL = """
-            SELECT book_id, last_read_chapter_id, last_read_chapter_title,
-                   last_read_position, last_read_page, is_finished, last_read_timestamp
+            SELECT book_id, book_title, last_read_chapter_id, last_read_chapter_title,
+                   last_read_position, last_read_page, is_finished, last_read_time
             FROM reading_progress
-            ORDER BY last_read_timestamp DESC
+            ORDER BY last_read_time DESC
             LIMIT 1;
             """;
 
@@ -67,7 +76,7 @@ public final class SqliteReadingProgressRepository implements ReadingProgressRep
     }
 
     /**
-     * 包级私有构造：允许测试注入 mock 的 DatabaseManager。
+     * 包级私有构造:允许测试注入 mock 的 DatabaseManager。
      */
     SqliteReadingProgressRepository(DatabaseManager databaseManager) {
         this.databaseManager = databaseManager;
@@ -77,20 +86,21 @@ public final class SqliteReadingProgressRepository implements ReadingProgressRep
 
     @Override
     public void updateProgress(@NotNull Book book, @Nullable String chapterId, @Nullable String chapterTitle, int position, int page) {
-        long currentTimestamp = System.currentTimeMillis();
-        LOG.debug(String.format("Updating progress in SQLite: Book='%s'(ID:%s), ChapterID=%s, Title='%s', Pos=%d, Page=%d, Finished=%b, Timestamp=%d",
-                book.getTitle(), book.getId(), chapterId, chapterTitle, position, page, book.isFinished(), currentTimestamp));
+        String currentTime = LocalDateTime.now().format(LAST_READ_TIME_FORMATTER);
+        LOG.debug(String.format("Updating progress in SQLite: Book='%s'(ID:%s), ChapterID=%s, Title='%s', Pos=%d, Page=%d, Finished=%b, Time=%s",
+                book.getTitle(), book.getId(), chapterId, chapterTitle, position, page, book.isFinished(), currentTime));
 
         try (Connection conn = databaseManager.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(UPSERT_PROGRESS_SQL)) {
 
             pstmt.setString(1, book.getId());
-            pstmt.setString(2, chapterId);
-            pstmt.setString(3, chapterTitle);
-            pstmt.setInt(4, position);
-            pstmt.setInt(5, page);
-            pstmt.setInt(6, book.isFinished() ? 1 : 0); // Store boolean as integer
-            pstmt.setLong(7, currentTimestamp); // Store timestamp as long (epoch millis)
+            pstmt.setString(2, book.getTitle());
+            pstmt.setString(3, chapterId);
+            pstmt.setString(4, chapterTitle);
+            pstmt.setInt(5, position);
+            pstmt.setInt(6, page);
+            pstmt.setInt(7, book.isFinished() ? 1 : 0); // Store boolean as integer
+            pstmt.setString(8, currentTime); // Store human-readable time as TEXT
 
             int affectedRows = pstmt.executeUpdate();
             if (affectedRows > 0) {
@@ -170,16 +180,7 @@ public final class SqliteReadingProgressRepository implements ReadingProgressRep
             pstmt.setString(1, bookId);
             try (ResultSet rs = pstmt.executeQuery()) {
                 if (rs.next()) {
-                    BookProgressData data = new BookProgressData(
-                            rs.getString("book_id"),
-                            rs.getString("last_read_chapter_id"),
-                            rs.getString("last_read_chapter_title"),
-                            rs.getInt("last_read_position"),
-                            rs.getInt("last_read_page"),
-                            rs.getInt("is_finished") == 1, // Convert integer back to boolean
-                            rs.getLong("last_read_timestamp") // Read timestamp as long
-                    );
-                    return Optional.of(data);
+                    return Optional.of(readProgressData(rs));
                 }
             }
         } catch (SQLException e) {
@@ -200,20 +201,27 @@ public final class SqliteReadingProgressRepository implements ReadingProgressRep
              ResultSet rs = pstmt.executeQuery()) {
 
             if (rs.next()) {
-                BookProgressData data = new BookProgressData(
-                        rs.getString("book_id"),
-                        rs.getString("last_read_chapter_id"),
-                        rs.getString("last_read_chapter_title"),
-                        rs.getInt("last_read_position"),
-                        rs.getInt("last_read_page"),
-                        rs.getInt("is_finished") == 1,
-                        rs.getLong("last_read_timestamp")
-                );
-                return Optional.of(data);
+                return Optional.of(readProgressData(rs));
             }
         } catch (SQLException e) {
             LOG.error("Failed to get last read progress data from SQLite", e);
         }
         return Optional.empty();
     }
-} 
+
+    /**
+     * 从结果集读取一行进度记录。列顺序与各 SELECT 语句保持一致。
+     */
+    private static BookProgressData readProgressData(ResultSet rs) throws SQLException {
+        return new BookProgressData(
+                rs.getString("book_id"),
+                rs.getString("book_title"),
+                rs.getString("last_read_chapter_id"),
+                rs.getString("last_read_chapter_title"),
+                rs.getInt("last_read_position"),
+                rs.getInt("last_read_page"),
+                rs.getInt("is_finished") == 1, // Convert integer back to boolean
+                rs.getString("last_read_time")
+        );
+    }
+}

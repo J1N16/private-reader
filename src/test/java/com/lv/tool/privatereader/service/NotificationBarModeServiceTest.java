@@ -200,7 +200,7 @@ class NotificationBarModeServiceTest {
         when(notificationService.getCurrentBookId()).thenReturn(null);
         when(notificationService.getCurrentChapterId()).thenReturn(null);
         BookProgressData lastRead = new BookProgressData(
-                "b1", "c1", "第一章", 0, 5, false, System.currentTimeMillis());
+                "b1", "书", "c1", "第一章", 0, 5, false, "2026-01-01 12:30:45.123");
         when(readingProgressRepository.getLastReadProgressData()).thenReturn(Optional.of(lastRead));
 
         service.handleNextPageAction(project);
@@ -276,7 +276,7 @@ class NotificationBarModeServiceTest {
     void initializeLogsWhenEnabledWithExistingProgress() {
         when(notificationReaderSettings.isEnabled()).thenReturn(true);
         BookProgressData lastRead = new BookProgressData(
-                "b1", "c1", "第一章", 0, 3, false, System.currentTimeMillis());
+                "b1", "书", "c1", "第一章", 0, 3, false, "2026-01-01 12:30:45.123");
         when(readingProgressRepository.getLastReadProgressData()).thenReturn(Optional.of(lastRead));
 
         service.initializeNotificationBarModeSettings();

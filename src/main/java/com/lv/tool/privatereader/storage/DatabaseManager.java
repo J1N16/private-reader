@@ -63,18 +63,41 @@ public final class DatabaseManager implements Disposable {
     private static final String CREATE_TABLE_SQL = """
             CREATE TABLE IF NOT EXISTS reading_progress (
                 book_id TEXT PRIMARY KEY NOT NULL,
+                book_title TEXT,
                 last_read_chapter_id TEXT,
                 last_read_chapter_title TEXT,
                 last_read_position INTEGER DEFAULT 0,
                 last_read_page INTEGER DEFAULT 1,
                 is_finished INTEGER DEFAULT 0, -- 0 for false, 1 for true
-                last_read_timestamp INTEGER NOT NULL
+                last_read_time TEXT
             );
             """;
 
     // SQL statement to add the 'is_finished' column if it doesn't exist (for migration)
     private static final String ADD_FINISHED_COLUMN_SQL = """
             ALTER TABLE reading_progress ADD COLUMN is_finished INTEGER DEFAULT 0;
+            """;
+
+    // SQL statement to add the 'book_title' column if it doesn't exist (for migration)
+    private static final String ADD_BOOK_TITLE_COLUMN_SQL = """
+            ALTER TABLE reading_progress ADD COLUMN book_title TEXT;
+            """;
+
+    // SQL statement to add the 'last_read_time' column if it doesn't exist (for migration)
+    private static final String ADD_LAST_READ_TIME_COLUMN_SQL = """
+            ALTER TABLE reading_progress ADD COLUMN last_read_time TEXT;
+            """;
+
+    // 将旧的 epoch 毫秒时间戳回填为人类可读的本地时间字符串(仅迁移期使用)
+    private static final String BACKFILL_LAST_READ_TIME_SQL = """
+            UPDATE reading_progress
+            SET last_read_time = strftime('%Y-%m-%d %H:%M:%f', last_read_timestamp / 1000.0, 'unixepoch', 'localtime')
+            WHERE last_read_time IS NULL AND last_read_timestamp IS NOT NULL;
+            """;
+
+    // 旧列的 NOT NULL 约束会阻止新写入(新代码不再提供该列),迁移后予以移除
+    private static final String DROP_LAST_READ_TIMESTAMP_COLUMN_SQL = """
+            ALTER TABLE reading_progress DROP COLUMN last_read_timestamp;
             """;
 
     public DatabaseManager() {
@@ -151,13 +174,34 @@ public final class DatabaseManager implements Disposable {
             statement.execute(CREATE_TABLE_SQL);
             LOG.info("Ensured 'reading_progress' table exists.");
 
+            // 逐列补齐(兼容旧版本数据库),避免旧表缺少新列
             if (hasColumn(connection, "reading_progress", "is_finished")) {
                 LOG.debug("'is_finished' column already exists.");
-                return;
+            } else {
+                statement.execute(ADD_FINISHED_COLUMN_SQL);
+                LOG.info("Added 'is_finished' column to 'reading_progress' table.");
             }
 
-            statement.execute(ADD_FINISHED_COLUMN_SQL);
-            LOG.info("Added 'is_finished' column to 'reading_progress' table.");
+            if (hasColumn(connection, "reading_progress", "book_title")) {
+                LOG.debug("'book_title' column already exists.");
+            } else {
+                statement.execute(ADD_BOOK_TITLE_COLUMN_SQL);
+                LOG.info("Added 'book_title' column to 'reading_progress' table.");
+            }
+
+            if (hasColumn(connection, "reading_progress", "last_read_time")) {
+                LOG.debug("'last_read_time' column already exists.");
+            } else {
+                statement.execute(ADD_LAST_READ_TIME_COLUMN_SQL);
+                LOG.info("Added 'last_read_time' column to 'reading_progress' table.");
+            }
+
+            // 迁移旧的 last_read_timestamp(epoch 毫秒):先回填人类可读时间,再删除旧列以解除 NOT NULL 约束
+            if (hasColumn(connection, "reading_progress", "last_read_timestamp")) {
+                statement.execute(BACKFILL_LAST_READ_TIME_SQL);
+                statement.execute(DROP_LAST_READ_TIMESTAMP_COLUMN_SQL);
+                LOG.info("Migrated and dropped legacy 'last_read_timestamp' column from 'reading_progress' table.");
+            }
         }
     }
 

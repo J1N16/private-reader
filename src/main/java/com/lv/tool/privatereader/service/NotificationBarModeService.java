@@ -342,6 +342,7 @@ public class NotificationBarModeService implements Disposable, NotificationReade
     private void saveCurrentReadingProgressAsync() {
         String bookId = this.currentBookId;
         String chapterId = this.currentChapterId;
+        String chapterTitle = notificationService.getCurrentChapterTitle();
         int page = this.currentPageNumber;
         if (bookId == null || chapterId == null) {
             return;
@@ -355,7 +356,7 @@ public class NotificationBarModeService implements Disposable, NotificationReade
                         .subscribe(
                             book -> {
                                 if (book != null) {
-                                    readingProgressRepository.updateProgress(book, chapterId, null, 0, page);
+                                    readingProgressRepository.updateProgress(book, chapterId, chapterTitle, 0, page);
                                 }
                             },
                             error -> LOG.warn("异步保存阅读进度失败: " + error.getMessage(), error)

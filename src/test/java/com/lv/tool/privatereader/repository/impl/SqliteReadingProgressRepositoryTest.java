@@ -45,12 +45,13 @@ class SqliteReadingProgressRepositoryTest {
             connection.createStatement().execute("""
                     CREATE TABLE IF NOT EXISTS reading_progress (
                         book_id TEXT PRIMARY KEY NOT NULL,
+                        book_title TEXT,
                         last_read_chapter_id TEXT,
                         last_read_chapter_title TEXT,
                         last_read_position INTEGER DEFAULT 0,
                         last_read_page INTEGER DEFAULT 1,
                         is_finished INTEGER DEFAULT 0,
-                        last_read_timestamp INTEGER NOT NULL
+                        last_read_time TEXT
                     );
                     """);
         }
@@ -96,12 +97,13 @@ class SqliteReadingProgressRepositoryTest {
         assertTrue(result.isPresent());
         BookProgressData data = result.get();
         assertEquals("book-1", data.bookId());
+        assertEquals("测试书籍", data.bookTitle());
         assertEquals("chapter-2", data.lastReadChapterId());
         assertEquals("第二章", data.lastReadChapterTitle());
         assertEquals(128, data.lastReadPosition());
         assertEquals(3, data.lastReadPage());
         assertFalse(data.isFinished());
-        assertTrue(data.lastReadTimestamp() > 0);
+        assertTrue(data.lastReadTime() != null && !data.lastReadTime().isEmpty());
     }
 
     @Test
@@ -153,7 +155,7 @@ class SqliteReadingProgressRepositoryTest {
     void getLastReadProgressDataReturnsMostRecentlyUpdated() throws Exception {
         Book book1 = book("book-1", "书籍一");
         repository.updateProgress(book1, "chapter-1", "第一章", 10, 1);
-        Thread.sleep(5); // 确保时间戳递增
+        Thread.sleep(50); // 确保人类可读时间字符串推进到下一毫秒
         Book book2 = book("book-2", "书籍二");
         repository.updateProgress(book2, "chapter-5", "第五章", 99, 2);
 
@@ -161,6 +163,7 @@ class SqliteReadingProgressRepositoryTest {
 
         assertTrue(result.isPresent());
         assertEquals("book-2", result.get().bookId());
+        assertEquals("书籍二", result.get().bookTitle());
     }
 
     // --- 重置 ---

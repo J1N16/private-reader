@@ -412,6 +412,11 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
     }
 
     @Override
+    public String getCurrentChapterTitle() {
+        return getViewState().getChapterTitle();
+    }
+
+    @Override
     public void showPrevPage(@NotNull Project project) {
         if (isLoadingChapter.get() || !isReadingActive()) {
             return;

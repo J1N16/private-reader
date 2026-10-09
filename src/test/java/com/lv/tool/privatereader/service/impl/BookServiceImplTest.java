@@ -43,12 +43,13 @@ class BookServiceImplTest {
         Book book = new Book("book-1", "测试书籍", "作者", "https://example.com/book");
         BookProgressData progress = new BookProgressData(
                 "book-1",
+                "测试书籍",
                 "chapter-2",
                 "第二章",
                 128,
                 3,
                 false,
-                1000L
+                "2026-01-01 12:30:45.123"
         );
         when(bookRepository.getBook("book-1")).thenReturn(book);
         when(readingProgressRepository.getProgress("book-1")).thenReturn(Optional.of(progress));
@@ -88,12 +89,13 @@ class BookServiceImplTest {
     void getLastReadBookReturnsEmptyWhenProgressBookMissing() {
         BookProgressData staleProgress = new BookProgressData(
                 "ghost-book",
+                "幽灵书",
                 "chapter-1",
                 "第一章",
                 10,
                 1,
                 false,
-                2000L
+                "2026-01-01 12:30:45.123"
         );
         when(readingProgressRepository.getLastReadProgressData()).thenReturn(Optional.of(staleProgress));
         when(bookRepository.getBook("ghost-book")).thenReturn(null);
@@ -110,12 +112,13 @@ class BookServiceImplTest {
         Book book = new Book("book-1", "测试书籍", "作者", "https://example.com/book");
         BookProgressData progress = new BookProgressData(
                 "book-1",
+                "测试书籍",
                 "chapter-2",
                 "第二章",
                 128,
                 3,
                 false,
-                1000L
+                "2026-01-01 12:30:45.123"
         );
         when(readingProgressRepository.getLastReadProgressData()).thenReturn(Optional.of(progress));
         when(bookRepository.getBook("book-1")).thenReturn(book);

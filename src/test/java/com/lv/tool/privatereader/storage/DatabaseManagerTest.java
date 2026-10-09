@@ -11,6 +11,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DatabaseManagerTest {
@@ -25,6 +26,8 @@ class DatabaseManagerTest {
 
             assertTrue(tableExists(connection, "reading_progress"));
             assertTrue(columnExists(connection, "reading_progress", "is_finished"));
+            assertTrue(columnExists(connection, "reading_progress", "book_title"));
+            assertTrue(columnExists(connection, "reading_progress", "last_read_time"));
         }
     }
 
@@ -42,6 +45,33 @@ class DatabaseManagerTest {
             DatabaseManager.initializeDatabaseTableStructure(connection);
 
             assertTrue(columnExists(connection, "reading_progress", "is_finished"));
+            assertTrue(columnExists(connection, "reading_progress", "book_title"));
+            assertTrue(columnExists(connection, "reading_progress", "last_read_time"));
+            // 旧列已迁移并删除,避免其 NOT NULL 约束阻断新写入
+            assertFalse(columnExists(connection, "reading_progress", "last_read_timestamp"));
+        }
+    }
+
+    @Test
+    void initializeBackfillsLegacyTimestampIntoReadableTime() throws SQLException {
+        try (Connection connection = openDatabase("legacy-data.db");
+             Statement statement = connection.createStatement()) {
+            statement.execute("""
+                    CREATE TABLE reading_progress (
+                        book_id TEXT PRIMARY KEY NOT NULL,
+                        last_read_timestamp INTEGER NOT NULL
+                    )
+                    """);
+            statement.execute("INSERT INTO reading_progress (book_id, last_read_timestamp) VALUES ('b1', 1000)");
+
+            DatabaseManager.initializeDatabaseTableStructure(connection);
+
+            try (ResultSet rs = statement.executeQuery("SELECT last_read_time FROM reading_progress WHERE book_id = 'b1'")) {
+                assertTrue(rs.next());
+                String migrated = rs.getString("last_read_time");
+                assertTrue(migrated != null && migrated.matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3}"),
+                        "应回填为 yyyy-MM-dd HH:mm:ss.SSS 格式,实际: " + migrated);
+            }
         }
     }
 

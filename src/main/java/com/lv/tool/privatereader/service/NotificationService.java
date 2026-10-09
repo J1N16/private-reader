@@ -83,6 +83,12 @@ public interface NotificationService {
     String getCurrentChapterId();
 
     /**
+     * 获取当前通知显示的章节标题 (用于通知栏模式)
+     * @return 章节标题,未处于阅读会话时返回 null
+     */
+    String getCurrentChapterTitle();
+
+    /**
      * 显示上一页内容并更新通知 (用于通知栏模式)
      * @param project 当前项目
      */
