@@ -7,8 +7,12 @@
 - 重构响应式阅读流程，消除界面卡顿 | Refactored the reactive reading pipeline for a smoother UI
 
 ### 稳定性 | Stability
-- 增强异常恢复能力，存储/解析异常时自动重建缓存 | Enhanced error recovery to automatically rebuild cache on storage/parse errors
-- 优化数据库连接与线程池管理，提升插件稳定性 | Improved database connection and thread pool management for stability
+- 增强异常恢复能力,存储/解析异常时自动重建缓存 | Enhanced error recovery to automatically rebuild cache on storage/parse errors
+- 优化数据库连接与线程池管理,提升插件稳定性 | Improved database connection and thread pool management for stability
+
+### 修复 | Fixes
+- 修复缓存设置不生效导致过期章节未按时清除的问题:设置界面的「缓存过期时间/最大缓存大小」与仓储实际读取的字段原本彼此独立,现已统一为同一份配置 | Fixed cache settings not taking effect, which left expired chapters uncleared: the UI's "cache expiry/max cache size" and the fields read by the repository were independent, now unified into a single configuration
+- 修复启动时清理过期缓存设置(`cleanupOnStartup`)从未被读取的问题:现按设置在启动阶段立即清理一次,不再只依赖 6 小时定时任务 | Fixed the startup cache-cleanup setting (`cleanupOnStartup`) never being read: now an immediate cleanup runs at startup per the setting, instead of relying solely on the 6-hour timer
 
 ## [2.5.1] - 2026-07-16
 

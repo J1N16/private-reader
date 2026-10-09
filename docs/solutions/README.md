@@ -13,7 +13,8 @@
 ```
 docs/solutions/
 ├── README.md              ← 本文件:总索引 / 单一事实源
-├── OPTIMIZATION_V14.md    ← 最新优化轮次(V15 起顺延)
+├── OPTIMIZATION_V15.md    ← 最新优化轮次(V16 起顺延)
+├── OPTIMIZATION_V14.md
 ├── archive/               ← 已完成轮次的详细记录(12 份)
 └── legacy/                ← 已废弃的 Reactor 时代文档(仅存档)
 ```
@@ -36,6 +37,7 @@ docs/solutions/
 | V12 | 2026-09-18 | 3.0.0 | 8 个核心服务类构造器注入改造,移除 `ensureServicesInitialized` 惰性机制 | 249 | 31.48% |
 | **V13** | **2026-09-20** | **3.0.0** | **导航流水线去重、NetworkUtils 并行探测+30s TTL、FileBookRepository 1295→762 行职责拆分、service 层补测、getChapterTitle NPE 修复、阈值 0.27→0.30(249→270)** | **270** | **33.54%** |
 | **V14** | **2026-09-20** | **3.0.0** | **P0/P1 落地:NotificationBarModeService 0%→74.79% 补测、NotificationServiceImpl 阅读仓库注入化收尾、NotificationDisplayManager 回调化+纯函数提取、ChapterListDialog 三处重复收敛+纯逻辑提取、RepositoryModule 评估保留(270→299)** | **299** | **36.35%** |
+| **V15** | **2026-10-09** | **3.0.0** | **修复缓存过期/容量设置不生效与启动清理失效(字段去重)、仓储启动清理回归补测(299→311)** | **311** | **38.34%** |
 
 ## 三、当前状态(单一事实源)
 
@@ -59,6 +61,7 @@ docs/solutions/
 | `storage` 主体、`initialization` 为低覆盖保留方向 | V9/V10 遗留 | 低 |
 | `NotificationDisplayManager.showReadingNotification` 真实通知创建路径未覆盖(需 mockStatic 门面或 GUI 冒烟) | V14 遗留 | 中 |
 | 覆盖率实测 36.35%,阈值可上调至 0.33(余量 6.35pp) | V14 建议 | 低 |
+| 覆盖率实测 38.34%,阈值可上调至 0.35(余量 3.34pp) | V15 建议 | 低 |
 | `verifyPlugin` 本地需联网下载 IDE 263 平台;**CI 的 verify-plugin job 有外网正常执行** | V13 遗留 | 环境 |
 
 ### 3.3 覆盖率阈值历史
@@ -69,13 +72,15 @@ docs/solutions/
 | 0.27 | V9 补测后(28.02%) | V9 |
 | 0.30 | V13 补测后(33.54%) | V13 |
 
+> V15 实测 LINE 已达 38.34%,按余量建议下一轮补测后可将阈值上调至 0.35。
+
 ## 四、指标演进
 
-| 指标 | V8 | V9 | V10 | V11 | V12 | V13 | V14 |
-|------|----|----|----|----|----|----|----|
-| LINE | 18.24% | 28.02% | 31.02% | 31.49% | 31.48% | 33.54% | **36.35%** |
-| 测试数 | 99 | 209 | 236 | 248 | 249 | 270 | **299** |
-| 总行数 | 7581 | 7581 | 7581 | 7692 | 7692 | 7672 | 7653 |
+| 指标 | V8 | V9 | V10 | V11 | V12 | V13 | V14 | V15 |
+|------|----|----|----|----|----|----|----|----|
+| LINE | 18.24% | 28.02% | 31.02% | 31.49% | 31.48% | 33.54% | **36.35%** | **38.34%** |
+| 测试数 | 99 | 209 | 236 | 248 | 249 | 270 | **299** | **311** |
+| 总行数 | 7581 | 7581 | 7581 | 7692 | 7692 | 7672 | 7653 | 7653 |
 
 > 注:总行数为各轮报告的统计口径,代码持续变化,精确值以 JaCoCo 报告为准。
 
@@ -89,6 +94,8 @@ docs/solutions/
 6. **反序列化 Settings 实例 getter 陷阱**:`loaded=false` 首次 getter 触发再加载,断言用反射读字段(V10)。
 7. **lambda 引用非 final 变量编译失败**:先用 final 副本再进 lambda(V11)。
 8. **SQLite 测试连接未关闭锁文件**:Windows 下 @TempDir 删不掉,`@AfterEach` 统一关闭连接(V5)。
+9. **“双份设置字段”静默失效**:`CacheSettings` 同时存在 `cacheExpiryHours`/`maxCacheSizeMB` 与 `maxCacheAge`/`maxCacheSize` 两组字段,UI 写一组、仓储读另一组,设置看似保存成功却完全不影响行为。凡“设置项不生效”类缺陷,先核对写入方与读取方是否指向同一变量(V15)。
+10. **定时清理首次触发过晚**:`Observable.interval(6, HOURS)` 首次触发在前,短会话永远等不到。启动型清理需在构造/启动阶段显式跑一次(V15)。
 
 ## 六、归档流程
 
@@ -108,7 +115,8 @@ sed -i 's|](\./OPTIMIZATION|](../OPTIMIZATION|g' archive/OPTIMIZATION_V{n}.md
 
 | 文档 | 说明 |
 |------|------|
-| `OPTIMIZATION_V14.md` | 最新轮次:通知栏服务补测 / 注入收尾 / 展示层回调化 / 章节列表去重(V14) |
+| `OPTIMIZATION_V15.md` | 最新轮次:缓存设置字段去重 / 启动清理修复 / 仓储回归补测(V15) |
+| `OPTIMIZATION_V14.md` | 通知栏服务补测 / 注入收尾 / 展示层回调化 / 章节列表去重(V14) |
 | `OPTIMIZATION_V13.md` | 导航去重 / 网络缓存 / 仓储拆分 / service 补测(V13) |
 
 ### archive(已完成轮次)

@@ -60,8 +60,24 @@ public class ReactiveChapterCacheRepositoryImpl implements ReactiveChapterCacheR
             .build();
         this.cacheDir = initCacheDir();
 
-        // 启动定期清理任务
+        // 启动时按设置执行一次清理,再启动定期清理任务
+        if (cacheSettings != null && cacheSettings.isCleanupOnStartup()) {
+            runStartupCleanup();
+        }
         scheduleCleanupTask();
+    }
+
+    /**
+     * 启动时异步执行一次过期缓存清理。
+     *
+     * <p>此前仅在构造器中调度「每 6 小时」的定时任务,首次触发要等到 6 小时后,
+     * 短时使用(或频繁重启)的用户永远等不到清理,导致过期章节长期驻留磁盘。
+     * 这里在启动阶段补一次即时清理。</p>
+     */
+    private void runStartupCleanup() {
+        cleanupCacheReactive()
+            .doOnError(e -> LOG.warn("启动缓存清理失败", e))
+            .subscribe();
     }
 
     private String initCacheDir() {

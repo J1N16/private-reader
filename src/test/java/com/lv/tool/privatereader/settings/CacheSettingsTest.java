@@ -66,8 +66,10 @@ class CacheSettingsTest {
             settings.setEnablePreload(false);
             settings.setPreloadDelay(1000);
 
-            assertEquals(48, settings.getCacheExpiryHours());
-            assertEquals(200, settings.getMaxCacheSizeMB());
+            // cacheExpiryHours/maxCacheSizeMB 与 maxCacheAge/maxCacheSize 共享同一份设置,
+            // 后写入的 setter 生效
+            assertEquals(14 * 24, settings.getCacheExpiryHours());
+            assertEquals(150, settings.getMaxCacheSizeMB());
             assertFalse(settings.isEnableCache());
             assertFalse(settings.isCleanupOnStartup());
             assertFalse(settings.isPreloadNextChapter());
@@ -76,6 +78,49 @@ class CacheSettingsTest {
             assertEquals(14, settings.getMaxCacheAge());
             assertFalse(settings.isEnablePreload());
             assertEquals(1000, settings.getPreloadDelay());
+        }
+    }
+
+    // --- 设置与缓存仓库读同一份值(回归) ---
+
+    /**
+     * 缓存仓库的过期判断读 {@code getCacheExpiryHours()},UI 写 {@code setMaxCacheAge()},
+     * 两者必须指向同一份设置,否则设置界面的「缓存过期时间」永远不会生效。
+     */
+    @Test
+    void expiryDaysAndHoursStayInSync() {
+        try (MockedStatic<SettingsStorage> ignored = mockStorage()) {
+            CacheSettings settings = new CacheSettings();
+            settings.getCacheExpiryHours(); // 触发加载
+
+            settings.setMaxCacheAge(3);
+            assertEquals(3 * 24, settings.getCacheExpiryHours(),
+                    "UI 设置的天数应直接决定缓存过期小时数");
+
+            settings.setCacheExpiryHours(48);
+            assertEquals(2, settings.getMaxCacheAge(),
+                    "缓存过期小时数换算回天数后应与 UI 一致");
+            assertTrue(settings.isCleanupOnStartup());
+        }
+    }
+
+    /**
+     * 缓存仓库的容量清理读 {@code getMaxCacheSizeMB()},UI 写 {@code setMaxCacheSize()},
+     * 两者必须共享同一份设置。
+     */
+    @Test
+    void maxCacheSizeAndMBStayInSync() {
+        try (MockedStatic<SettingsStorage> ignored = mockStorage()) {
+            CacheSettings settings = new CacheSettings();
+            settings.getMaxCacheSizeMB(); // 触发加载
+
+            settings.setMaxCacheSize(250);
+            assertEquals(250, settings.getMaxCacheSizeMB(),
+                    "UI 设置的容量应直接决定缓存仓库的容量上限");
+
+            settings.setMaxCacheSizeMB(400);
+            assertEquals(400, settings.getMaxCacheSize(),
+                    "缓存仓库写入的容量应回写到 UI 设置");
         }
     }
 
@@ -93,7 +138,8 @@ class CacheSettingsTest {
             when(storageMock.loadSettings(CacheSettings.class)).thenReturn(persisted);
 
             CacheSettings settings = new CacheSettings();
-            assertEquals(12, settings.getCacheExpiryHours());
+            // 12 小时以天为最小粒度,四舍五入后至少 1 天 => 24 小时
+            assertEquals(24, settings.getCacheExpiryHours());
             assertEquals(5, settings.getPreloadCount());
             // 未持久化的字段保持默认
             assertEquals(100, settings.getMaxCacheSizeMB());

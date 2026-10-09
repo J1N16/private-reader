@@ -94,8 +94,8 @@ class SettingsStorageTest {
         storage.saveSettings(settings);
 
         String json = Files.readString(settingsFilePath(CacheSettings.class));
-        assertTrue(json.contains("\"cacheExpiryHours\": 48"), "JSON 应包含设置的字段值，实际: " + json);
-        assertTrue(json.contains("\"enablePreload\": false"), "JSON 应包含布尔字段，实际: " + json);
+        assertTrue(json.contains("\"maxCacheAge\": 2"), "JSON 应包含设置的字段值,实际: " + json);
+        assertTrue(json.contains("\"enablePreload\": false"), "JSON 应包含布尔字段,实际: " + json);
     }
 
     // --- 加载 ---
@@ -120,13 +120,13 @@ class SettingsStorageTest {
         // 模拟之前版本写入的 JSON（只包含部分字段）
         Files.createDirectories(settingsFilePath(CacheSettings.class).getParent());
         Files.writeString(settingsFilePath(CacheSettings.class),
-                "{\n  \"cacheExpiryHours\": 48,\n  \"maxCacheSizeMB\": 200,\n  \"enableCache\": false\n}");
+                "{\n  \"maxCacheAge\": 2,\n  \"maxCacheSize\": 200,\n  \"enableCache\": false\n}");
 
         CacheSettings loaded = storage.loadSettings(CacheSettings.class);
 
         assertNotNull(loaded);
-        assertEquals(48L, fieldValue(loaded, "cacheExpiryHours"));
-        assertEquals(200, fieldValue(loaded, "maxCacheSizeMB"));
+        assertEquals(2, fieldValue(loaded, "maxCacheAge"));
+        assertEquals(200, fieldValue(loaded, "maxCacheSize"));
         assertFalse((Boolean) fieldValue(loaded, "enableCache"));
     }
 
@@ -150,8 +150,8 @@ class SettingsStorageTest {
 
         CacheSettings loaded = storage.loadSettings(CacheSettings.class);
         assertNotNull(loaded);
-        assertEquals(72L, fieldValue(loaded, "cacheExpiryHours"));
-        assertEquals(300, fieldValue(loaded, "maxCacheSizeMB"));
+        assertEquals(10, fieldValue(loaded, "maxCacheAge"));
+        assertEquals(500, fieldValue(loaded, "maxCacheSize"));
         assertFalse((Boolean) fieldValue(loaded, "enableCache"));
         assertFalse((Boolean) fieldValue(loaded, "cleanupOnStartup"));
         assertFalse((Boolean) fieldValue(loaded, "preloadNextChapter"));
@@ -174,6 +174,6 @@ class SettingsStorageTest {
 
         CacheSettings loaded = storage.loadSettings(CacheSettings.class);
         assertNotNull(loaded);
-        assertEquals(96L, fieldValue(loaded, "cacheExpiryHours"), "再次保存应覆盖旧值");
+        assertEquals(4, fieldValue(loaded, "maxCacheAge"), "再次保存应覆盖旧值");
     }
 }

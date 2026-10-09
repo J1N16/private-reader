@@ -19,8 +19,6 @@ import org.jetbrains.annotations.NotNull;
 public class CacheSettings extends BaseSettings<CacheSettings> {
     private static final Logger LOG = Logger.getInstance(CacheSettings.class);
 
-    private long cacheExpiryHours = 24 * 7; // 默认缓存过期时间：7天
-    private int maxCacheSizeMB = 100; // 默认最大缓存大小：100MB
     private boolean enableCache = true; // 默认启用缓存
     private boolean cleanupOnStartup = true; // 默认启动时清理过期缓存
     private boolean preloadNextChapter = true; // 默认预加载下一章
@@ -38,42 +36,49 @@ public class CacheSettings extends BaseSettings<CacheSettings> {
     }
 
     /**
-     * 获取缓存过期时间（小时）
+     * 获取缓存过期时间(小时)
      *
-     * @return 缓存过期时间
+     * <p>由唯一的过期天数设置({@link #getMaxCacheAge()})换算而来,
+     * 保证 UI 设置与缓存仓库的过期判断始终一致。</p>
+     *
+     * @return 缓存过期时间(小时)
      */
     public long getCacheExpiryHours() {
         ensureSettingsLoaded();
-        return cacheExpiryHours;
+        return (long) maxCacheAge * 24L;
     }
 
     /**
-     * 设置缓存过期时间（小时）
+     * 设置缓存过期时间(小时)
      *
-     * @param cacheExpiryHours 缓存过期时间
+     * <p>以天为最小粒度换算后写入唯一的过期天数设置,至少保留 1 天。</p>
+     *
+     * @param cacheExpiryHours 缓存过期时间(小时)
      */
     public void setCacheExpiryHours(long cacheExpiryHours) {
-        this.cacheExpiryHours = cacheExpiryHours;
+        this.maxCacheAge = (int) Math.max(1L, Math.round(cacheExpiryHours / 24.0));
         markDirty();
     }
 
     /**
-     * 获取最大缓存大小（MB）
+     * 获取最大缓存大小(MB)
      *
-     * @return 最大缓存大小
+     * <p>与 UI 的 {@link #getMaxCacheSize()} 共享同一份设置,避免出现两个互相独立的缓存上限。</p>
+     *
+     * @return 最大缓存大小(MB)
      */
     public int getMaxCacheSizeMB() {
         ensureSettingsLoaded();
-        return maxCacheSizeMB;
+        return maxCacheSize;
     }
 
     /**
-     * 设置最大缓存大小（MB）
+     * 设置最大缓存大小(MB)
      *
-     * @param maxCacheSizeMB 最大缓存大小
+     * @param maxCacheSizeMB 最大缓存大小(MB)
      */
     public void setMaxCacheSizeMB(int maxCacheSizeMB) {
-        this.maxCacheSizeMB = maxCacheSizeMB;
+        this.maxCacheSize = maxCacheSizeMB;
         markDirty();
     }
 
@@ -250,8 +255,6 @@ public class CacheSettings extends BaseSettings<CacheSettings> {
 
     @Override
     protected void copyFrom(CacheSettings source) {
-        this.cacheExpiryHours = source.cacheExpiryHours;
-        this.maxCacheSizeMB = source.maxCacheSizeMB;
         this.enableCache = source.enableCache;
         this.cleanupOnStartup = source.cleanupOnStartup;
         this.preloadNextChapter = source.preloadNextChapter;
@@ -267,8 +270,6 @@ public class CacheSettings extends BaseSettings<CacheSettings> {
         // 直接创建新实例并设置默认值
         // BaseSettings.ensureSettingsLoaded 会处理 isInitializingDefaults 标志
         CacheSettings settings = new CacheSettings();
-        settings.cacheExpiryHours = 24 * 7; // 默认7天
-        settings.maxCacheSizeMB = 100; // 默认100MB
         settings.enableCache = true;
         settings.cleanupOnStartup = true;
         settings.preloadNextChapter = true;
