@@ -7,6 +7,7 @@ import com.intellij.util.io.HttpRequests;
 import java.io.IOException;
 import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
@@ -54,15 +55,49 @@ public class SafeHttpRequestExecutor {
     }
 
     /**
-     * 安全地执行HTTP请求，带有重试机制和自定义重试参数
+     * 安全地执行HTTP请求,带有重试机制和自定义重试参数。
+     *
+     * <p>响应字节统一按 UTF-8 解码为字符串。若页面本身使用 GBK/GB2312 等
+     * 非 UTF-8 编码(如 {@code biquge.one}),应改用
+     * {@link #executeGetRequestBytes(String)} 获取原始字节,交给 Jsoup 依据
+     * 页面 {@code <meta charset>} 自动识别编码,否则会产生乱码。
      *
      * @param url 请求的URL
      * @param maxRetries 最大重试次数
      * @param retryDelayMs 重试延迟（毫秒）
-     * @return HTTP响应内容
+     * @return HTTP响应内容(UTF-8 解码)
      * @throws IOException 如果请求失败或被中断
      */
     public static String executeGetRequest(final String url, final int maxRetries, final int retryDelayMs) throws IOException {
+        byte[] bytes = executeGetRequestBytes(url, maxRetries, retryDelayMs);
+        return bytes != null ? new String(bytes, StandardCharsets.UTF_8) : null;
+    }
+
+    /**
+     * 安全地执行HTTP请求,返回原始响应字节(不做字符集解码)。
+     *
+     * <p>适用于编码未知的网页抓取:调用方可将字节流交给 Jsoup,由 Jsoup 根据
+     * HTTP Content-Type 或页面 {@code <meta charset>} 自动探测正确编码,
+     * 避免 GBK/GB2312 页面被误按 UTF-8 解码而出现乱码。
+     *
+     * @param url 请求的URL
+     * @return HTTP响应原始字节
+     * @throws IOException 如果请求失败或被中断
+     */
+    public static byte[] executeGetRequestBytes(final String url) throws IOException {
+        return executeGetRequestBytes(url, DEFAULT_MAX_RETRIES, DEFAULT_RETRY_DELAY_MS);
+    }
+
+    /**
+     * 安全地执行HTTP请求,返回原始响应字节,带自定义重试参数。
+     *
+     * @param url 请求的URL
+     * @param maxRetries 最大重试次数
+     * @param retryDelayMs 重试延迟（毫秒）
+     * @return HTTP响应原始字节
+     * @throws IOException 如果请求失败或被中断
+     */
+    public static byte[] executeGetRequestBytes(final String url, final int maxRetries, final int retryDelayMs) throws IOException {
         long requestId = totalRequests.incrementAndGet();
         long startTime = System.currentTimeMillis();
         
@@ -91,7 +126,7 @@ public class SafeHttpRequestExecutor {
             }
 
             try {
-                String result = executeHttpRequest(url, requestId, attempt);
+                byte[] result = executeHttpRequestBytes(url, requestId, attempt);
                 long totalTime = System.currentTimeMillis() - startTime;
                 long attemptTime = System.currentTimeMillis() - attemptStartTime;
                 
@@ -99,10 +134,10 @@ public class SafeHttpRequestExecutor {
                 totalRequestTime.addAndGet(totalTime);
                 
                 // 记录请求成功
-                NetworkPerformanceMonitor.getInstance().recordRequestSuccess(url, domain, totalTime, result != null ? result.length() : 0);
+                NetworkPerformanceMonitor.getInstance().recordRequestSuccess(url, domain, totalTime, result != null ? result.length : 0);
                 
                 LOG.debug("[性能监控] HTTP请求成功 #{}: {}，总耗时: {}ms，本次尝试耗时: {}ms，内容长度: {} 字节",
-                        requestId, url, totalTime, attemptTime, result != null ? result.length() : 0);
+                        requestId, url, totalTime, attemptTime, result != null ? result.length : 0);
 
                 return result;
             } catch (IOException e) {
@@ -140,25 +175,25 @@ public class SafeHttpRequestExecutor {
     }
 
     /**
-     * 执行单个HTTP请求
+     * 执行单个HTTP请求,返回原始响应字节
      *
      * @param url 请求的URL
      * @param requestId 请求ID
      * @param attempt 尝试次数
-     * @return HTTP响应内容
+     * @return HTTP响应原始字节
      * @throws IOException 如果请求失败或被中断
      */
-    private static String executeHttpRequest(final String url, long requestId, int attempt) throws IOException {
+    private static byte[] executeHttpRequestBytes(final String url, long requestId, int attempt) throws IOException {
         long httpStartTime = System.currentTimeMillis();
         LOG.debug("[性能监控] 执行HTTP请求 #" + requestId + " (尝试 " + (attempt + 1) + "): " + url);
         
         // 使用专用线程池而不是共享平台线程池
-        Future<String> future = httpExecutor.submit(() -> {
+        Future<byte[]> future = httpExecutor.submit(() -> {
             long threadStartTime = System.currentTimeMillis();
             LOG.debug("[性能监控] 线程池任务开始 #" + requestId + "，线程: " + Thread.currentThread().getName());
             
             try {
-                String result = HttpRequests.request(url)
+                byte[] result = HttpRequests.request(url)
                         .userAgent(DEFAULT_USER_AGENT)
                         .connectTimeout(DEFAULT_CONNECT_TIMEOUT)
                         .readTimeout(DEFAULT_READ_TIMEOUT)
@@ -166,9 +201,9 @@ public class SafeHttpRequestExecutor {
                         .connect(request -> {
                             long connectTime = System.currentTimeMillis() - threadStartTime;
                             LOG.debug("[性能监控] 连接成功 #" + requestId + "，连接耗时: " + connectTime + "ms，开始读取内容");
-                            String content = request.readString();
+                            byte[] content = request.readBytes(null);
                             long readTime = System.currentTimeMillis() - threadStartTime - connectTime;
-                            LOG.debug("[性能监控] 内容读取完成 #" + requestId + "，读取耗时: " + readTime + "ms，内容长度: " + (content != null ? content.length() : 0) + " 字节");
+                            LOG.debug("[性能监控] 内容读取完成 #" + requestId + ",读取耗时: " + readTime + "ms,内容长度: " + (content != null ? content.length : 0) + " 字节");
                             return content;
                         });
                 
@@ -184,7 +219,7 @@ public class SafeHttpRequestExecutor {
 
         try {
             // 设置超时时间为18秒，确保不会卡死
-            String result = future.get(18, TimeUnit.SECONDS);
+            byte[] result = future.get(18, TimeUnit.SECONDS);
             long totalHttpTime = System.currentTimeMillis() - httpStartTime;
             LOG.debug("[性能监控] HTTP请求成功完成 #" + requestId + "，总耗时: " + totalHttpTime + "ms");
             return result;

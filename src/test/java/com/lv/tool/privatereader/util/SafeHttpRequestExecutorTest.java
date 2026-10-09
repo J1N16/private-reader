@@ -85,6 +85,20 @@ class SafeHttpRequestExecutorTest {
         }
     }
 
+    // --- 原始字节 API:用于让 Jsoup 自动识别非 UTF-8 编码 ---
+
+    @Test
+    void executeGetRequestBytesReturnsRawBytes() throws IOException {
+        try (MockedStatic<NetworkPerformanceMonitor> monitors = mockStatic(NetworkPerformanceMonitor.class)) {
+            monitors.when(NetworkPerformanceMonitor::getInstance).thenReturn(mockMonitor());
+
+            byte[] result = SafeHttpRequestExecutor.executeGetRequestBytes(baseUrl + "/book");
+
+            assertEquals("请求内容", new String(result, StandardCharsets.UTF_8));
+            assertEquals(1, requestCount.get());
+        }
+    }
+
     // --- 网络异常重试 ---
 
     @Test
