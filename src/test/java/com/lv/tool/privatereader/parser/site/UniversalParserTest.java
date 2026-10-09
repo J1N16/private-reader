@@ -64,6 +64,22 @@ class UniversalParserTest {
     }
 
     @Test
+    void parseChapterListNormalizesDescendingCatalogToAscending() {
+        // 部分站点目录按最新章节在前输出,解析结果应为正序
+        String html = """
+                <html><body>
+                <a href="/book/3.html">第三章 风云突变</a>
+                <a href="/book/2.html">第二章 再遇故人</a>
+                <a href="/book/1.html">第一章 初入江湖</a>
+                </body></html>""";
+        List<Chapter> chapters = parseWithHtml(html);
+
+        assertEquals(3, chapters.size());
+        assertEquals("第一章 初入江湖", chapters.get(0).title());
+        assertEquals("第三章 风云突变", chapters.get(2).title());
+    }
+
+    @Test
     void parseChapterListRecognizesChineseChapterTitles() {
         String html = """
                 <html><body>

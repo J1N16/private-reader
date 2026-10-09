@@ -9,6 +9,7 @@ import com.intellij.util.xmlb.annotations.Tag;
 import com.intellij.util.xmlb.annotations.Transient;
 import com.intellij.util.xmlb.annotations.XCollection;
 import com.lv.tool.privatereader.parser.ParserFactory;
+import com.lv.tool.privatereader.parser.common.ChapterListOrderNormalizer;
 import com.google.gson.annotations.Expose;
 import java.util.Map;
 import java.util.HashMap;
@@ -217,11 +218,13 @@ public class Book {
     }
 
     public void setCachedChapters(List<Chapter> chapters) {
-        this.cachedChapters = chapters;
-        if (chapters != null) {
-            this.totalChapters = chapters.size();
+        // 兼容旧缓存:部分站点目录按“最新章节在前”输出,历史缓存可能为倒序,
+        // 统一在写入时依据章号规范为正序(无法判定顺序时原样保留)。
+        this.cachedChapters = ChapterListOrderNormalizer.normalize(chapters);
+        if (this.cachedChapters != null) {
+            this.totalChapters = this.cachedChapters.size();
             // 更新章节索引Map
-            updateChapterMaps(chapters);
+            updateChapterMaps(this.cachedChapters);
         } else {
             // 如果章节列表为null，清空索引Map
             if (chapterIndexMap != null) {

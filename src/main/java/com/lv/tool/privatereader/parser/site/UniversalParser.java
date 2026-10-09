@@ -3,6 +3,7 @@ package com.lv.tool.privatereader.parser.site;
 import com.intellij.openapi.diagnostic.Logger;
 import com.lv.tool.privatereader.exception.PrivateReaderException;
 import com.lv.tool.privatereader.parser.NovelParser;
+import com.lv.tool.privatereader.parser.common.ChapterListOrderNormalizer;
 import com.lv.tool.privatereader.parser.common.ChapterTitleUtils;
 import com.lv.tool.privatereader.parser.common.MetadataAnalyzer;
 import com.lv.tool.privatereader.parser.common.TextDensityAnalyzer;
@@ -262,6 +263,10 @@ public final class UniversalParser implements NovelParser {
                 chapters = fullCatalog;
             }
         }
+
+        // 部分站点(尤其是移动站完整目录)按“最新章节在前”输出,解析结果会呈倒序,
+        // 这里依据章号统一翻转为正序,避免阅读器从末章开始、上下章行为颠倒。
+        chapters = ChapterListOrderNormalizer.normalize(chapters);
 
         return chapters;
     }

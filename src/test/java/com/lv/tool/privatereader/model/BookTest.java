@@ -64,6 +64,20 @@ class BookTest {
     }
 
     @Test
+    void setCachedChaptersNormalizesDescendingOrder() {
+        Book book = new Book("b1", "书名", "作者", "https://example.com/book/1");
+        book.setCachedChapters(List.of(
+                new NovelParser.Chapter("第三章", "https://example.com/3"),
+                new NovelParser.Chapter("第二章", "https://example.com/2"),
+                new NovelParser.Chapter("第一章", "https://example.com/1")
+        ));
+
+        assertEquals("第一章", book.getCachedChapters().get(0).title());
+        assertEquals(0, book.getChapterIndex("https://example.com/1"));
+        assertEquals(2, book.getChapterIndex("https://example.com/3"));
+    }
+
+    @Test
     void getChapterIndexReturnsNegativeWhenNotFound() {
         Book book = sampleBook();
         assertEquals(-1, book.getChapterIndex("https://example.com/99"));
