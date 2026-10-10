@@ -12,7 +12,6 @@ import com.lv.tool.privatereader.events.ChapterChangeManager;
 import com.lv.tool.privatereader.events.ChapterChangeEventSource;
 import com.lv.tool.privatereader.messaging.CurrentChapterNotifier;
 import com.lv.tool.privatereader.model.Book;
-import com.lv.tool.privatereader.model.BookProgressData;
 import com.lv.tool.privatereader.parser.NovelParser;
 import com.lv.tool.privatereader.parser.NovelParser.Chapter;
 import com.lv.tool.privatereader.repository.ReadingProgressRepository;
@@ -25,6 +24,7 @@ import com.lv.tool.privatereader.service.impl.notification.ChapterPaginationCach
 import com.lv.tool.privatereader.service.impl.notification.NotificationBarModeServiceUtils;
 import com.lv.tool.privatereader.service.impl.notification.NotificationDisplayManager;
 import com.lv.tool.privatereader.service.impl.notification.PaginationHelper;
+import com.lv.tool.privatereader.service.impl.notification.NotificationProgressManager;
 import com.lv.tool.privatereader.service.impl.notification.ReaderViewState;
 import com.lv.tool.privatereader.settings.NotificationReaderSettings;
 import com.lv.tool.privatereader.settings.ReaderModeSettings;
@@ -36,7 +36,6 @@ import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import com.intellij.openapi.application.ModalityState;
 
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.UnaryOperator;
@@ -71,8 +70,6 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
     private final ReactiveChapterPreloader chapterPreloader;
     private final ReactiveSchedulers reactiveSchedulers;
     private final ChapterChangeManager chapterChangeManager;
-    // V14:阅读仓库由构造器注入,消除四处按需 getService 硬编码(V12 构造器注入的收尾)
-    private final ReadingProgressRepository readingProgressRepository;
 
     // 阅读视图状态(V11:单一不可变快照,消除多 volatile 字段一致性隐患)
     private final AtomicReference<ReaderViewState> viewStateRef =
@@ -88,6 +85,9 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
 
     // V17:章节导航流水线拆分至独立导航器,本类仅通过窄接口 Host 回调
     private final ChapterNavigator chapterNavigator;
+
+    // V19:阅读进度保存/恢复拆分至独立管理器,本类仅通过窄接口 Host 回调
+    private final NotificationProgressManager progressManager;
 
     /**
      * 事件处理器宿主的窄接口实现。
@@ -122,7 +122,23 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
 
         @Override
         public void saveNotificationModeProgress() {
-            NotificationServiceImpl.this.saveNotificationModeProgress();
+            progressManager.saveProgress();
+        }
+    };
+
+    /**
+     * 进度管理器宿主的窄接口实现。
+     * <p>将 {@link NotificationProgressManager} 所需的最小能力映射到本服务的内部方法。
+     */
+    private final NotificationProgressManager.Host progressHost = new NotificationProgressManager.Host() {
+        @Override
+        public ReaderViewState getViewState() {
+            return NotificationServiceImpl.this.getViewState();
+        }
+
+        @Override
+        public boolean isReadingActive(boolean notifyWhenInactive) {
+            return NotificationServiceImpl.this.isReadingActive(notifyWhenInactive);
         }
     };
 
@@ -215,7 +231,6 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
         this.notificationSettings = notificationSettings;
         this.chapterPreloader = chapterPreloader;
         this.chapterChangeManager = chapterChangeManager;
-        this.readingProgressRepository = readingProgressRepository;
         this.reactiveSchedulers = ReactiveSchedulers.getInstance();
         this.chapterEventProcessor = new ChapterEventProcessor(
                 eventProcessorHost,
@@ -228,6 +243,9 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
                 bookService,
                 notificationSettings,
                 reactiveSchedulers);
+        this.progressManager = new NotificationProgressManager(
+                progressHost,
+                readingProgressRepository);
         this.messageBusConnection = ApplicationManager.getApplication().getMessageBus().connect(this);
         this.messageBusConnection.subscribe(CurrentChapterNotifier.TOPIC, new CurrentChapterNotifier() {
             @Override
@@ -308,7 +326,7 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
 
                     // 如果传入的页码是1(默认值),尝试从数据库中获取保存的页码
                     if (pageNumber == 1) {
-                        savedPageNumber = restoreSavedPageNumber(bookId, chapterId, pageNumber);
+                        savedPageNumber = progressManager.restoreSavedPageNumber(bookId, chapterId, pageNumber);
                     }
                     
                     // 分页并设置当前页码
@@ -364,7 +382,7 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
                     }
                     
                     // 保存阅读进度
-                    saveNotificationModeProgress();
+                    progressManager.saveProgress();
                     
                     // 记录事件
                     LOG.info("[事件处理] 通知栏已更新到新章节 '" + title + "' 的第" + savedPageNumber + "页。");
@@ -561,7 +579,7 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
         String notificationContent = pageContent + (progressText.isEmpty() ? "" : "\n\n" + progressText);
         
         showCurrentPageInternal(project, title, notificationContent);
-        saveNotificationModeProgress();
+        progressManager.saveProgress();
         LOG.debug("[通知栏模式] 成功显示页面,当前页索引: " + state.getPageIndex());
     }
     
@@ -626,7 +644,7 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
             ReaderViewState state = getViewState();
             LOG.info("[Dispose] Current NotificationServiceImpl state: pageIndex = " + state.getPageIndex() + ", pages.size() = " + state.getPageCount());
             LOG.info("Currently in notification mode, attempting to save progress before disposing.");
-            saveNotificationModeProgress(false, false);
+            progressManager.saveProgress(false);
         } else {
             LOG.info("Not in notification mode or ReaderModeSettings is null, no progress to save from notification bar.");
         }
@@ -658,8 +676,6 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
         LOG.debug("[分页] 分页完成,总页数: " + pages.size());
         return pages;
     }
-
-    /**
 
     /**
      * 关闭当前通知
@@ -722,68 +738,5 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
         ApplicationManager.getApplication().getMessageBus()
                 .syncPublisher(CurrentChapterNotifier.TOPIC)
                 .currentChapterChanged(book, chapter);
-    }
-
-    /**
-     * 从数据库恢复保存的页码
-     *
-     * @param bookId 书籍ID
-     * @param chapterId 章节ID
-     * @param defaultPage 默认页码
-     * @return 恢复的页码,如果未找到则返回默认页码
-     */
-    private int restoreSavedPageNumber(String bookId, String chapterId, int defaultPage) {
-        try {
-            if (readingProgressRepository != null) {
-                Optional<BookProgressData> progressDataOpt = readingProgressRepository.getProgress(bookId);
-                if (progressDataOpt.isPresent()) {
-                    BookProgressData progressData = progressDataOpt.get();
-                    if (chapterId.equals(progressData.lastReadChapterId())) {
-                        int savedPage = progressData.lastReadPage();
-                        LOG.debug("[页码调试] 从数据库恢复页码: {}", savedPage);
-                        return savedPage;
-                    } else {
-                        LOG.debug("[页码调试] 章节ID不匹配,无法恢复页码");
-                    }
-                } else {
-                    LOG.debug("[页码调试] 未找到书籍的阅读进度记录");
-                }
-            } else {
-                LOG.warn("[页码调试] 无法获取阅读进度仓库,无法恢复页码");
-            }
-        } catch (Exception e) {
-            LOG.error("[页码调试] 恢复页码时出错", e);
-        }
-        return defaultPage;
-    }
-
-    private void saveNotificationModeProgress() {
-        saveNotificationModeProgress(true, true);
-    }
-
-    private void saveNotificationModeProgress(boolean notifyWhenInactive, boolean createRepositoryIfNeeded) {
-        if (!isReadingActive(notifyWhenInactive)) {
-            if (notifyWhenInactive) {
-                LOG.warn("[进度保存] 无法保存通知栏模式进度:没有活动的阅读会话。");
-            } else {
-                LOG.debug("[进度保存] 无法保存通知栏模式进度:没有活动的阅读会话。");
-            }
-            return;
-        }
-
-        try {
-            // V14:阅读仓库改为构造器注入,不再按需从服务容器获取(参数保留以兼容既有调用语义)
-            if (readingProgressRepository != null) {
-                ReaderViewState state = getViewState();
-                int pageToSave = state.getPageIndex() + 1;
-                readingProgressRepository.updateProgress(state.getBook(), state.getChapterId(), state.getChapterTitle(), 0, pageToSave);
-                LOG.info(String.format("[进度保存] 成功保存通知栏模式阅读进度:书籍='%s', 章节='%s', 页码=%d",
-                        state.getBook().getTitle(), state.getChapterTitle(), pageToSave));
-            } else {
-                LOG.warn("[进度保存] SqliteReadingProgressRepository 服务未初始化,跳过保存进度。");
-            }
-        } catch (Exception e) {
-            LOG.error("[进度保存] 保存通知栏模式阅读进度时发生意外错误。", e);
-        }
     }
 }

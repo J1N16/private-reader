@@ -13,7 +13,8 @@
 ```
 docs/solutions/
 ├── README.md              ← 本文件:总索引 / 单一事实源
-├── OPTIMIZATION_V18.md    ← 最新优化轮次(V19 起顺延)
+├── OPTIMIZATION_V19.md    ← 最新优化轮次(V20 起顺延)
+├── OPTIMIZATION_V18.md
 ├── OPTIMIZATION_V17.md
 ├── OPTIMIZATION_V16.md
 ├── OPTIMIZATION_V15.md
@@ -44,6 +45,7 @@ docs/solutions/
 | **V16** | **2026-10-10** | **3.1.0** | **拆分 `NotificationServiceImpl` 章节变更事件处理为 `ChapterEventProcessor`(窄接口 Host 解耦,代码 1186→1096 行)、新增 4 测试、阈值 0.30→0.35** | **331** | **39.95%** |
 | **V17** | **2026-10-10** | **3.1.1** | **拆分导航流水线为 `ChapterNavigator`(上/下章、末页、双数据源收敛,1096→923 行)、新增 8 测试** | **339** | **41.08%** |
 | **V18** | **2026-10-10** | **3.1.1** | **删除无调用方的 Reactive 兼容路径 `showChapterContent(Book,...)`(923→788 行)与 5 个失效 import** | **339** | **41.45%** |
+| **V19** | **2026-10-10** | **3.1.1** | **拆分阅读进度保存/恢复为 `NotificationProgressManager`(788→741 行)、新增 7 测试** | **346** | **41.89%** |
 
 ## 三、当前状态(单一事实源)
 
@@ -59,13 +61,14 @@ docs/solutions/
 - **事件处理拆分**:`NotificationServiceImpl` 章节变更事件处理下沉至 `ChapterEventProcessor`(窄接口 `Host` 解耦,1186→1096 行)
 - **导航流水线拆分**:`NotificationServiceImpl` 章节导航下沉至 `ChapterNavigator`(上/下章、末页、双数据源收敛,1096→923 行)
 - **死代码清理**:删除无调用方的 Reactive 兼容路径 `showChapterContent(Book,...)` 与 5 个失效 import(923→788 行)
+- **进度逻辑拆分**:阅读进度保存/恢复下沉至 `NotificationProgressManager`(788→741 行)
 - **工程化**:JaCoCo 覆盖率护栏(当前 **0.30**,实测 36.35%)+ GitHub Actions CI(构建/测试/打包/`verifyPlugin`)
 
 ### 3.2 遗留事项(按文档轮次汇总)
 
 | 事项 | 来源 | 优先级 |
 |------|------|--------|
-| `NotificationServiceImpl` 仍有 ~788 行,可评估拆分 `dispose` 生命周期/进度保存恢复与 `showChapterContent(Project,...)` 展示路径 | V11/V13/V14/V16/V17/V18 遗留 | 低 |
+| `NotificationServiceImpl` 仍有 ~741 行,剩余可评估拆分 `showChapterContent(Project,...)` 展示路径与 `dispose` 生命周期 | V11/V13/V14/V16/V17/V18/V19 遗留 | 低 |
 | `ui/*`(actions/dialog/settings/ReaderPanel)依赖 EDT/Swing,0 覆盖,需真实 IDE 或 UI 测试框架 | V9-V14 遗留 | 中 |
 | `storage` 主体、`initialization` 为低覆盖保留方向 | V9/V10 遗留 | 低 |
 | `NotificationDisplayManager.showReadingNotification` 真实通知创建路径未覆盖(需 mockStatic 门面或 GUI 冒烟) | V14 遗留 | 中 |
@@ -74,6 +77,7 @@ docs/solutions/
 | 覆盖率实测 39.95%,阈值已于 V16 上调至 0.35(余量 4.95pp) | V16 完成 | — |
 | 覆盖率实测 41.08%(V17),阈值 0.35 仍有 6.08pp 余量 | V17 | 低 |
 | 覆盖率实测 41.45%(V18),阈值 0.35 仍有 6.45pp 余量 | V18 | 低 |
+| 覆盖率实测 41.89%(V19),阈值 0.35 仍有 6.89pp 余量 | V19 | 低 |
 | `verifyPlugin` 本地需联网下载 IDE 263 平台;**CI 的 verify-plugin job 有外网正常执行** | V13 遗留 | 环境 |
 
 ### 3.3 覆盖率阈值历史
@@ -86,15 +90,15 @@ docs/solutions/
 | 0.35 | V16 拆分 `ChapterEventProcessor` 并补测后(39.95%) | V16 |
 
 > V15 实测 LINE 达 38.34%;V16 拆分事件处理并补测后达 39.95% 并将阈值上调至 0.35;
-> V17 拆分导航流水线补测后达 41.08%;V18 删死代码后达 41.45%。
+> V17 拆分导航流水线补测后达 41.08%;V18 删死代码后达 41.45%;V19 拆进度逻辑后达 41.89%。
 
 ## 四、指标演进
 
-| 指标 | V8 | V9 | V10 | V11 | V12 | V13 | V14 | V15 | V16 | V17 | V18 |
-|------|----|----|----|----|----|----|----|----|----|----|----|
-| LINE | 18.24% | 28.02% | 31.02% | 31.49% | 31.48% | 33.54% | **36.35%** | **38.34%** | **39.95%** | **41.08%** | **41.45%** |
-| 测试数 | 99 | 209 | 236 | 248 | 249 | 270 | **299** | **311** | **331** | **339** | **339** |
-| 总行数 | 7581 | 7581 | 7581 | 7692 | 7692 | 7672 | 7653 | 7653 | 7912 | 7939 | 7867 |
+| 指标 | V8 | V9 | V10 | V11 | V12 | V13 | V14 | V15 | V16 | V17 | V18 | V19 |
+|------|----|----|----|----|----|----|----|----|----|----|----|----|
+| LINE | 18.24% | 28.02% | 31.02% | 31.49% | 31.48% | 33.54% | **36.35%** | **38.34%** | **39.95%** | **41.08%** | **41.45%** | **41.89%** |
+| 测试数 | 99 | 209 | 236 | 248 | 249 | 270 | **299** | **311** | **331** | **339** | **339** | **346** |
+| 总行数 | 7581 | 7581 | 7581 | 7692 | 7692 | 7672 | 7653 | 7653 | 7912 | 7939 | 7867 | 7876 |
 
 > 注:总行数为各轮报告的统计口径,代码持续变化,精确值以 JaCoCo 报告为准。
 
@@ -129,7 +133,8 @@ sed -i 's|](\./OPTIMIZATION|](../OPTIMIZATION|g' archive/OPTIMIZATION_V{n}.md
 
 | 文档 | 说明 |
 |------|------|
-| `OPTIMIZATION_V18.md` | 最新轮次:删除无调用方的 Reactive 兼容路径(V18) |
+| `OPTIMIZATION_V19.md` | 最新轮次:阅读进度保存/恢复拆分 `NotificationProgressManager`(V19) |
+| `OPTIMIZATION_V18.md` | 删除无调用方的 Reactive 兼容路径(V18) |
 | `OPTIMIZATION_V17.md` | 导航流水线拆分 `ChapterNavigator`(V17) |
 | `OPTIMIZATION_V16.md` | 章节变更事件拆分 `ChapterEventProcessor` / 阈值上调(V16) |
 | `OPTIMIZATION_V15.md` | 缓存设置字段去重 / 启动清理修复 / 仓储回归补测(V15) |
