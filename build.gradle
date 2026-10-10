@@ -5,7 +5,7 @@ plugins {
 }
 
 group = 'com.lv.tool'
-version = '3.0.0'
+version = '3.1.0'
 
 repositories {
     mavenCentral()
@@ -89,19 +89,23 @@ intellijPlatform {
     patchPluginXml {
         sinceBuild = '261'
         changeNotes = """
-              <h3>3.0.0 版本更新</h3>
+              <h3>3.1.0 版本更新</h3>
               <ul>
-                <li>优化翻页性能，章节分页结果缓存，翻页更流畅</li>
-                <li>重构响应式阅读流程，消除界面卡顿</li>
-                <li>增强异常恢复能力，存储/解析异常时自动重建缓存</li>
-                <li>优化数据库连接与线程池管理，提升插件稳定性</li>
+                <li>修复切换章节时页码未重置、章节名未写入数据库的问题</li>
+                <li>修复倒序目录导致从末章开始、上一章/下一章颠倒的问题</li>
+                <li>修复缓存过期/容量设置不生效与启动清理未执行的问题</li>
+                <li>修复部分站点编码乱码与目录不完整的问题</li>
+                <li>修复书架为空时目录/章节内容未清空及上次阅读书籍获取报错</li>
+                <li>阅读进度表新记录书名与章节名,阅读时间改为可读的字符串</li>
               </ul>
-              <h3>Version 3.0.0</h3>
+              <h3>Version 3.1.0</h3>
               <ul>
-                <li>Optimized page-turning performance with chapter pagination caching</li>
-                <li>Refactored the reactive reading pipeline for a smoother UI</li>
-                <li>Enhanced error recovery to automatically rebuild cache on storage/parse errors</li>
-                <li>Improved database connection and thread pool management for stability</li>
+                <li>Fixed page number not resetting on chapter switch and chapter title not being saved</li>
+                <li>Fixed reversed catalogs causing the reader to start from the last chapter with prev/next inverted</li>
+                <li>Fixed cache expiry/size settings not taking effect and startup cleanup never running</li>
+                <li>Fixed garbled encoding and incomplete catalogs on some sites</li>
+                <li>Fixed empty bookshelf not clearing chapter list/content and errors fetching the last read book</li>
+                <li>Reading progress now records book/chapter titles, and reading time is stored as a readable string</li>
               </ul>
               """
     }

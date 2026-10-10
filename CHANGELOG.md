@@ -1,20 +1,27 @@
 # Changelog 更新日志
 
-## [3.0.0] - 2026-08-14
-
-### 性能优化 | Performance Improvements
-- 优化翻页性能，章节分页结果缓存，翻页更流畅 | Optimized page-turning performance with chapter pagination caching
-- 重构响应式阅读流程，消除界面卡顿 | Refactored the reactive reading pipeline for a smoother UI
-
-### 稳定性 | Stability
-- 增强异常恢复能力,存储/解析异常时自动重建缓存 | Enhanced error recovery to automatically rebuild cache on storage/parse errors
-- 优化数据库连接与线程池管理,提升插件稳定性 | Improved database connection and thread pool management for stability
+## [3.1.0] - 2026-10-10
 
 ### 修复 | Fixes
 - 修复切换章节时页码未重置、章节名未写入数据库的问题:进度保存一度按具体实现类 `SqliteReadingProgressRepository` 从容器查询(插件仅按接口注册,查询为 null)而回退到会丢弃页码的 `BookService` 重载,导致新章节仍写入旧页码;阅读面板滚动防抖保存又固定传入空标题,覆盖了 `last_read_chapter_title`。现改为按 `ReadingProgressRepository` 接口保存带页码进度、滚动保存解析并带上真实章节标题,且切换章节时同步重置内存页码 | Fixed page number not resetting on chapter switch and chapter title not persisted: progress saving looked up the concrete `SqliteReadingProgressRepository` (registered only by interface, so the lookup returned null) and fell back to a `BookService` overload that discards the page, leaving the old page on the new chapter; the reader panel's debounced scroll save also passed an empty title, overwriting `last_read_chapter_title`. Saving now goes through the `ReadingProgressRepository` interface with an explicit page, the scroll save resolves and passes the real chapter title, and switching chapters resets the in-memory page index
 - 修复部分站点目录为倒序导致阅读器从末章开始、上一章/下一章颠倒的问题:解析后依据章号(阿拉伯/中文数字)自动规范为正序,历史缓存写入时同样归一 | Fixed reversed chapter catalogs on some sites causing the reader to start from the last chapter and prev/next to be inverted: catalogs are now normalized to ascending order by chapter number (Arabic/Chinese numerals), including when written to cache
 - 修复缓存设置不生效导致过期章节未按时清除的问题:设置界面的「缓存过期时间/最大缓存大小」与仓储实际读取的字段原本彼此独立,现已统一为同一份配置 | Fixed cache settings not taking effect, which left expired chapters uncleared: the UI's "cache expiry/max cache size" and the fields read by the repository were independent, now unified into a single configuration
 - 修复启动时清理过期缓存设置(`cleanupOnStartup`)从未被读取的问题:现按设置在启动阶段立即清理一次,不再只依赖 6 小时定时任务 | Fixed the startup cache-cleanup setting (`cleanupOnStartup`) never being read: now an immediate cleanup runs at startup per the setting, instead of relying solely on the 6-hour timer
+- 修复部分站点(如 biquge.one)编码乱码与目录不完整的问题 | Fixed garbled encoding and incomplete catalogs on some sites (e.g. biquge.one)
+- 修复书架为空时未清空目录列表与章节内容、获取上次阅读书籍报错的问题 | Fixed empty bookshelf not clearing the chapter list/content and errors when fetching the last read book
+
+### 新增 | Added
+- 阅读进度表新增书名与章节名记录,阅读时间改用可读的字符串 | The reading progress table now records book and chapter titles, and reading time is stored as a readable string
+
+## [3.0.0] - 2026-08-14
+
+### 性能优化 | Performance Improvements
+- 优化翻页性能,章节分页结果缓存,翻页更流畅 | Optimized page-turning performance with chapter pagination caching
+- 重构响应式阅读流程,消除界面卡顿 | Refactored the reactive reading pipeline for a smoother UI
+
+### 稳定性 | Stability
+- 增强异常恢复能力,存储/解析异常时自动重建缓存 | Enhanced error recovery to automatically rebuild cache on storage/parse errors
+- 优化数据库连接与线程池管理,提升插件稳定性 | Improved database connection and thread pool management for stability
 
 ## [2.5.1] - 2026-07-16
 
