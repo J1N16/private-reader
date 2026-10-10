@@ -1,7 +1,6 @@
 package com.lv.tool.privatereader.service;
 
 import com.intellij.notification.Notification;
-import com.lv.tool.privatereader.model.Book;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Single;
 import org.jetbrains.annotations.NotNull;
@@ -115,7 +114,6 @@ public interface NotificationService {
     void showLoadingNotification(@NotNull com.intellij.openapi.project.Project project, @NotNull String message);
 
     // Existing reactive methods (kept for compatibility if still used elsewhere)
-    Single<Notification> showChapterContent(@NotNull Book book, @NotNull String chapterId, @NotNull String content);
     Single<Notification> showError(@NotNull String title, @NotNull String message);
     Single<Notification> showInfo(@NotNull String title, @NotNull String message);
     Completable closeAllNotificationsReactive();
