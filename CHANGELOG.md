@@ -7,10 +7,11 @@
 - 继续拆分章节导航流水线为独立 `ChapterNavigator`(上/下章、跳转末页、缓存/异步双数据源收敛),该服务 1096→923 行,无行为变更 | Extracted the chapter navigation pipeline into a standalone `ChapterNavigator` (prev/next chapter, jump-to-last-page, cached/async source convergence), shrinking the service from 1096 to 923 lines, with no behavior change
 - 删除无调用方的 Reactive 兼容路径 `NotificationService.showChapterContent(Book, chapterId, content)` 及其失效 import,该服务 923→788 行,无行为变更 | Removed the unused reactive compatibility path `NotificationService.showChapterContent(Book, chapterId, content)` and its stale imports, shrinking the service from 923 to 788 lines, with no behavior change
 - 拆分通知栏阅读进度保存/恢复为独立 `NotificationProgressManager`(窄接口 Host 解耦),该服务 788→741 行,无行为变更 | Extracted notification-bar reading-progress save/restore into a standalone `NotificationProgressManager` (decoupled via a narrow `Host` interface), shrinking the service from 788 to 741 lines, with no behavior change
+- 拆分通知栏章节内容展示流水线为独立 `ChapterContentViewer`(窄接口 Host 解耦),该服务 741→694 行,无行为变更 | Extracted the notification-bar chapter-content display pipeline into a standalone `ChapterContentViewer` (decoupled via a narrow `Host` interface), shrinking the service from 741 to 694 lines, with no behavior change
 
 ### 质量与维护 | Quality and Maintenance
-- 新增 `ChapterEventProcessorTest` 4 个事件门控/同步/页码恢复测试、`ChapterNavigatorTest` 8 个导航/边界测试、`NotificationProgressManagerTest` 7 个恢复/保存测试(346 测试全通过) | Added 4 `ChapterEventProcessorTest` cases (event gating/sync/page restoration), 8 `ChapterNavigatorTest` cases (navigation/boundaries), and 7 `NotificationProgressManagerTest` cases (restore/save) (346 tests passing)
-- JaCoCo LINE 覆盖率 39.13%→41.89%,回归护栏阈值 0.30→0.35 | JaCoCo LINE coverage 39.13%→41.89%, regression gate raised from 0.30 to 0.35
+- 新增 `ChapterEventProcessorTest` 4 个、`ChapterNavigatorTest` 8 个、`NotificationProgressManagerTest` 7 个、`ChapterContentViewerTest` 3 个回归测试(349 测试全通过) | Added 4 `ChapterEventProcessorTest`, 8 `ChapterNavigatorTest`, 7 `NotificationProgressManagerTest`, and 3 `ChapterContentViewerTest` regression tests (349 tests passing)
+- JaCoCo LINE 覆盖率 39.13%→42.44%,回归护栏阈值 0.30→0.35 | JaCoCo LINE coverage 39.13%→42.44%, regression gate raised from 0.30 to 0.35
 
 ## [3.1.0] - 2026-10-10
 

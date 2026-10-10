@@ -13,13 +13,13 @@ import com.lv.tool.privatereader.events.ChapterChangeEventSource;
 import com.lv.tool.privatereader.messaging.CurrentChapterNotifier;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.parser.NovelParser;
-import com.lv.tool.privatereader.parser.NovelParser.Chapter;
 import com.lv.tool.privatereader.repository.ReadingProgressRepository;
 import com.lv.tool.privatereader.service.BookService;
 import com.lv.tool.privatereader.service.ChapterService;
 import com.lv.tool.privatereader.service.NotificationService;
 import com.lv.tool.privatereader.service.impl.notification.ChapterEventProcessor;
 import com.lv.tool.privatereader.service.impl.notification.ChapterNavigator;
+import com.lv.tool.privatereader.service.impl.notification.ChapterContentViewer;
 import com.lv.tool.privatereader.service.impl.notification.ChapterPaginationCache;
 import com.lv.tool.privatereader.service.impl.notification.NotificationBarModeServiceUtils;
 import com.lv.tool.privatereader.service.impl.notification.NotificationDisplayManager;
@@ -33,7 +33,6 @@ import org.jetbrains.annotations.NotNull;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.disposables.CompositeDisposable;
-import com.intellij.openapi.application.ModalityState;
 
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -89,6 +88,9 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
     // V19:阅读进度保存/恢复拆分至独立管理器,本类仅通过窄接口 Host 回调
     private final NotificationProgressManager progressManager;
 
+    // V20:章节内容展示流水线拆分至独立展示器,本类仅通过窄接口 Host 回调
+    private final ChapterContentViewer chapterContentViewer;
+
     /**
      * 事件处理器宿主的窄接口实现。
      * <p>将 {@link ChapterEventProcessor} 所需的最小能力映射到本服务的内部方法,
@@ -139,6 +141,47 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
         @Override
         public boolean isReadingActive(boolean notifyWhenInactive) {
             return NotificationServiceImpl.this.isReadingActive(notifyWhenInactive);
+        }
+    };
+
+    /**
+     * 内容展示器宿主的窄接口实现。
+     * <p>将 {@link ChapterContentViewer} 所需的最小能力映射到本服务的内部方法。
+     */
+    private final ChapterContentViewer.Host contentViewerHost = new ChapterContentViewer.Host() {
+        @Override
+        public ReaderViewState getViewState() {
+            return NotificationServiceImpl.this.getViewState();
+        }
+
+        @Override
+        public void updateViewState(@NotNull UnaryOperator<ReaderViewState> updater) {
+            NotificationServiceImpl.this.updateViewState(updater);
+        }
+
+        @Override
+        public void setCurrentChapterContent(@NotNull String content) {
+            NotificationServiceImpl.this.setCurrentChapterContent(content);
+        }
+
+        @Override
+        public void showCurrentPageInternal(@NotNull Project project, @NotNull String title, @NotNull String content) {
+            NotificationServiceImpl.this.showCurrentPageInternal(project, title, content);
+        }
+
+        @Override
+        public void showError(@NotNull String title, @NotNull String message) {
+            NotificationServiceImpl.this.showError(title, message);
+        }
+
+        @Override
+        public void closeCurrentNotificationInternal() {
+            NotificationServiceImpl.this.closeCurrentNotificationInternal();
+        }
+
+        @Override
+        public void triggerChapterPreload(@NotNull Book book, int chapterIndex) {
+            NotificationServiceImpl.this.triggerChapterPreload(book, chapterIndex);
         }
     };
 
@@ -246,6 +289,12 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
         this.progressManager = new NotificationProgressManager(
                 progressHost,
                 readingProgressRepository);
+        this.chapterContentViewer = new ChapterContentViewer(
+                contentViewerHost,
+                bookService,
+                notificationSettings,
+                reactiveSchedulers,
+                progressManager);
         this.messageBusConnection = ApplicationManager.getApplication().getMessageBus().connect(this);
         this.messageBusConnection.subscribe(CurrentChapterNotifier.TOPIC, new CurrentChapterNotifier() {
             @Override
@@ -294,103 +343,7 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
 
     @Override
     public void showChapterContent(@NotNull Project project, @NotNull String bookId, @NotNull String chapterId, int pageNumber, @NotNull String title, @NotNull String content) {
-
-        LOG.debug("NotificationServiceImpl: 显示章节内容通知: " + title);
-
-        if (content == null || content.isEmpty()) {
-            LOG.warn("章节内容为空,无法显示通知: " + chapterId);
-            showError("显示章节失败", "章节内容为空");
-            return;
-        }
-
-        // 异步获取Book对象
-        bookService.getBookById(bookId)
-            .subscribeOn(reactiveSchedulers.io())
-            .subscribe(book -> {
-                if (book == null) {
-                    LOG.warn("未找到书籍,无法显示通知: " + bookId);
-                    showError("显示章节失败", "未找到书籍");
-                    return;
-                }
-                
-                // 在UI线程中执行UI更新操作
-                ApplicationManager.getApplication().invokeLater(() -> {
-                    // 关闭当前通知
-                    closeCurrentNotificationInternal();
-                    
-                    // 保存当前书籍、章节和标题信息
-                    updateViewState(s -> s.withChapter(book, chapterId, title)); // 使用传入的标题
-                    
-                    // 检查是否有保存的页码信息
-                    int savedPageNumber = pageNumber;
-
-                    // 如果传入的页码是1(默认值),尝试从数据库中获取保存的页码
-                    if (pageNumber == 1) {
-                        savedPageNumber = progressManager.restoreSavedPageNumber(bookId, chapterId, pageNumber);
-                    }
-                    
-                    // 分页并设置当前页码
-                    setCurrentChapterContent(content);
-                    
-                    // 确保页码在有效范围内
-                    List<String> pages = getViewState().getPages();
-                    if (savedPageNumber <= 0) {
-                        savedPageNumber = 1;
-                    } else if (savedPageNumber > pages.size()) {
-                        savedPageNumber = pages.size();
-                    }
-                    
-                    // 设置当前页码索引(0-based)
-                    int pageIndex = savedPageNumber - 1;
-                    updateViewState(s -> s.withPageIndex(pageIndex));
-                    LOG.debug(String.format("[页码调试] 设置当前页码索引: %d (页码: %d)", pageIndex, savedPageNumber));
-                    
-                    // 获取当前页内容
-                    String pageContent = getViewState().getPages().get(pageIndex);
-                    
-                    // 构建通知标题和内容
-                    String notificationTitle = book.getTitle() + " - " + title;
-                    
-                    // 添加页码信息(如果设置启用)
-                    String progressText = notificationSettings != null && notificationSettings.isShowReadingProgress() ?
-                            "进度: 第 " + (pageIndex + 1) + " 页,共 " + pages.size() + " 页" : "";
-                    
-                    String notificationContent = pageContent + (progressText.isEmpty() ? "" : "\n\n" + progressText);
-                    
-                    // 显示通知
-                    showCurrentPageInternal(project, notificationTitle, notificationContent);
-                    
-                    // 触发章节预加载
-                    try {
-                        if (chapterPreloader != null && book.getCachedChapters() != null) {
-                            int chapterIndex = -1;
-                            List<NovelParser.Chapter> cachedChapters = book.getCachedChapters();
-                            for (int i = 0; i < cachedChapters.size(); i++) {
-                                if (chapterId.equals(cachedChapters.get(i).url())) {
-                                    chapterIndex = i;
-                                    break;
-                                }
-                            }
-                            
-                            if (chapterIndex != -1) {
-                                LOG.info("[通知栏模式] 触发章节预加载: 书籍=" + book.getTitle() + ", 章节索引=" + chapterIndex);
-                                triggerChapterPreload(book, chapterIndex);
-                            }
-                        }
-                    } catch (Exception e) {
-                        LOG.error("[通知栏模式] 触发章节预加载时出错", e);
-                    }
-                    
-                    // 保存阅读进度
-                    progressManager.saveProgress();
-                    
-                    // 记录事件
-                    LOG.info("[事件处理] 通知栏已更新到新章节 '" + title + "' 的第" + savedPageNumber + "页。");
-                }, ModalityState.defaultModalityState());
-            }, error -> {
-                LOG.error("获取书籍对象失败: " + error.getMessage(), error);
-                showError("显示章节失败", "获取书籍信息时出错: " + error.getMessage());
-            });
+        chapterContentViewer.showChapterContent(project, bookId, chapterId, pageNumber, title, content);
     }
 
     /**
