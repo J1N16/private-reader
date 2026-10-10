@@ -244,6 +244,36 @@ class ReaderViewModelTest {
     }
 
     @Test
+    void saveProgressIncludesChapterTitle() throws InterruptedException {
+        Book book = book("book-1", "测试书籍", 100L);
+        book.updateReadingProgress("chapter-1", 0, 1);
+        NovelParser.Chapter chapter1 = chapter("第一章", "chapter-1");
+        when(bookService.getAllBooks()).thenReturn(Observable.just(book));
+        when(bookService.getLastReadBook()).thenReturn(Maybe.just(book));
+        when(bookService.getBookById("book-1")).thenReturn(Single.just(book));
+        when(chapterService.getChapterList(book)).thenReturn(Single.just(List.of(chapter1)));
+        when(chapterService.getChapterContent(book, "chapter-1")).thenReturn(Single.just("第一章正文"));
+        when(bookService.saveReadingProgress(any(Book.class), anyString(), anyString(), anyInt()))
+                .thenReturn(Completable.complete());
+        viewModel = new ReaderViewModel(bookService, chapterService, null, notificationService);
+
+        awaitState(stateLatch -> {
+            Disposable disposable = viewModel.getState().subscribe(next -> {
+                if ("第一章正文".equals(next.getContent())) {
+                    stateLatch.set(next);
+                }
+            });
+            viewModel.processIntent(new IReaderIntent.LoadInitialData());
+            return disposable;
+        });
+
+        // 滚动防抖保存:此前传空串会把进度表章节名覆盖为空
+        viewModel.processIntent(new IReaderIntent.SaveProgress("chapter-1", 120));
+
+        verify(bookService, timeout(1000)).saveReadingProgress(book, "chapter-1", "第一章", 120);
+    }
+
+    @Test
     void deleteBookFailureClearsLoadingAndShowsError() throws InterruptedException {
         Book book = book("book-1", "测试书籍", 100L);
         when(bookService.getAllBooks()).thenReturn(Observable.just(book));

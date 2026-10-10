@@ -5,6 +5,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  * 通知栏阅读视图状态(不可变快照)。
@@ -83,12 +84,20 @@ public final class ReaderViewState {
         return new ReaderViewState(newBook, chapterId, chapterTitle, pages, pageIndex);
     }
 
-    /** 同时更新书籍、章节ID、章节标题(保留分页与页码) */
+    /**
+     * 同时更新书籍、章节ID、章节标题。
+     * <p>
+     * 当章节ID发生变化时把页码重置为 0:避免旧章节的页码残留到新章节开头的展示/保存中
+     * (调用方若需定位到目标页,仍会在随后用 {@link #withPageIndex(int)} 显式覆盖)。
+     * 章节ID未变时保留原页码。
+     */
     @NotNull
     public ReaderViewState withChapter(@NotNull Book newBook,
                                        @NotNull String newChapterId,
                                        @NotNull String newChapterTitle) {
-        return new ReaderViewState(newBook, newChapterId, newChapterTitle, pages, pageIndex);
+        boolean chapterChanged = !Objects.equals(chapterId, newChapterId);
+        return new ReaderViewState(newBook, newChapterId, newChapterTitle, pages,
+                chapterChanged ? 0 : pageIndex);
     }
 
     /**

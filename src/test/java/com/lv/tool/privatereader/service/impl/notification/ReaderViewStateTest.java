@@ -50,6 +50,32 @@ class ReaderViewStateTest {
     }
 
     @Test
+    void withChapterResetsPageIndexWhenChapterChanges() {
+        Book book = createBook("b1", "测试书");
+        ReaderViewState state = ReaderViewState.empty()
+                .withChapter(book, "c1", "第一章")
+                .withPages(List.of("页1", "页2", "页3"), true)
+                .withPageIndex(2)
+                .withChapter(book, "c2", "第二章");
+
+        assertEquals(0, state.getPageIndex(), "切换到新章节时应重置页码");
+        assertEquals("c2", state.getChapterId());
+        assertEquals("第二章", state.getChapterTitle());
+    }
+
+    @Test
+    void withChapterKeepsPageIndexWhenChapterUnchanged() {
+        Book book = createBook("b1", "测试书");
+        ReaderViewState state = ReaderViewState.empty()
+                .withChapter(book, "c1", "第一章")
+                .withPages(List.of("页1", "页2", "页3"), true)
+                .withPageIndex(2)
+                .withChapter(book, "c1", "第一章");
+
+        assertEquals(2, state.getPageIndex(), "章节未变时应保留页码");
+    }
+
+    @Test
     void withPagesPresentsExistingPageCount() {
         Book book = createBook("b1", "测试书");
         List<String> pages = List.of("页1", "页2", "页3");

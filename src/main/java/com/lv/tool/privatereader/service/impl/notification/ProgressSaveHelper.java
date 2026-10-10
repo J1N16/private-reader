@@ -3,7 +3,7 @@ package com.lv.tool.privatereader.service.impl.notification;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.lv.tool.privatereader.model.Book;
-import com.lv.tool.privatereader.repository.impl.SqliteReadingProgressRepository;
+import com.lv.tool.privatereader.repository.ReadingProgressRepository;
 import com.lv.tool.privatereader.service.BookService;
 import org.jetbrains.annotations.NotNull;
 
@@ -26,15 +26,21 @@ public final class ProgressSaveHelper {
      * @param pageIndex 当前页码索引（0基）
      */
     public static void saveProgress(@NotNull Book book, @NotNull String chapterId, @NotNull String chapterTitle, int pageIndex) {
-        SqliteReadingProgressRepository readingProgressRepository = ApplicationManager.getApplication().getService(SqliteReadingProgressRepository.class);
+        // 按接口类型从容器获取(插件仅以 ReadingProgressRepository 接口注册,按具体实现类查询会得到 null,
+        // 从而退回到会丢弃页码的 4 参重载,导致切换章节时页码无法重置)
+        ReadingProgressRepository readingProgressRepository =
+                ApplicationManager.getApplication().getService(ReadingProgressRepository.class);
         if (readingProgressRepository != null) {
-            // 使用带页码参数的重载方法，position设为0，直接使用pageIndex + 1作为页码
+            // 使用带页码参数的重载方法,position设为0,直接使用pageIndex + 1作为页码
             readingProgressRepository.updateProgress(book, chapterId, chapterTitle, 0, pageIndex + 1);
             LOG.debug(String.format("[页码调试] 直接保存页码: %d", pageIndex + 1));
         } else {
-            LOG.warn("[页码调试] 无法获取 SqliteReadingProgressRepository 实例，使用 bookService.saveReadingProgress 方法");
+            LOG.warn("[页码调试] 无法获取 ReadingProgressRepository 实例,使用 bookService.saveReadingProgress 方法");
             BookService bookService = ApplicationManager.getApplication().getService(BookService.class);
             if (bookService != null) {
+                // BookService 仅提供 4 参重载,其页码取自 book.lastReadPage;
+                // 这里先同步 book 的页码,避免回退路径丢弃传入的 pageIndex
+                book.setLastReadPage(pageIndex + 1);
                 bookService.saveReadingProgress(book, chapterId, chapterTitle, pageIndex)
                     .subscribe(
                         () -> LOG.debug(String.format("[页码调试] 通过 BookService 保存页码: %d", pageIndex + 1)),

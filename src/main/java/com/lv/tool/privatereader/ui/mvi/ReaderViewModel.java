@@ -429,12 +429,16 @@ public class ReaderViewModel implements Disposable {
     }
     
     private void saveProgress(String chapterId, int position) {
-        String bookId = uiState.getValue().getSelectedBookId();
+        ReaderUiState state = uiState.getValue();
+        String bookId = state.getSelectedBookId();
         if (bookId == null) return;
+
+        // 必须带上章节标题:此前传空串会把进度表中的 last_read_chapter_title 覆盖为空
+        String chapterTitle = resolveChapterTitle(state, chapterId);
 
         disposables.add(
             bookService.getBookById(bookId)
-                .flatMap(book -> bookService.saveReadingProgress(book, chapterId, "", position)
+                .flatMap(book -> bookService.saveReadingProgress(book, chapterId, chapterTitle, position)
                     .andThen(Single.just(true)))
                 .subscribeOn(Schedulers.io())
                 .subscribe(
@@ -442,6 +446,27 @@ public class ReaderViewModel implements Disposable {
                     error -> LOG.error("Failed to save progress for chapter: " + chapterId, error)
                 )
         );
+    }
+
+    /**
+     * 解析章节标题:优先从当前章节列表按 URL 查找,回退到当前状态记录的章节标题。
+     *
+     * @param state     当前 UI 状态
+     * @param chapterId 章节 URL
+     * @return 章节标题;无法解析时返回空串
+     */
+    private String resolveChapterTitle(ReaderUiState state, String chapterId) {
+        if (chapterId == null) {
+            return "";
+        }
+        NovelParser.Chapter chapter = findChapterInCurrentState(chapterId);
+        if (chapter != null && chapter.title() != null) {
+            return chapter.title();
+        }
+        if (chapterId.equals(state.getSelectedChapterId()) && state.getCurrentChapterTitle() != null) {
+            return state.getCurrentChapterTitle();
+        }
+        return "";
     }
 
    private void handleExternalChapterChange(Book book, NovelParser.Chapter chapter) {

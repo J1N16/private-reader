@@ -5,6 +5,17 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import com.intellij.openapi.application.Application;
+import com.intellij.openapi.application.ApplicationManager;
+import com.lv.tool.privatereader.model.Book;
+import com.lv.tool.privatereader.repository.ReadingProgressRepository;
+import org.mockito.MockedStatic;
 
 /**
  * ProgressSaveHelper 单元测试
@@ -62,5 +73,27 @@ class ProgressSaveHelperTest {
         assertEquals(" - ", ProgressSaveHelper.buildNotificationTitle("", ""));
         assertEquals("书 - ", ProgressSaveHelper.buildNotificationTitle("书", ""));
         assertEquals(" - 章", ProgressSaveHelper.buildNotificationTitle("", "章"));
+    }
+
+    // --- saveProgress(页码与章节名写入) ---
+
+    @Test
+    void saveProgressPersistsPageNumberAndChapterTitleViaInterfaceRepository() {
+        Book book = new Book("b1", "书", "作者", "https://example.com/b1");
+        ReadingProgressRepository repository = mock(ReadingProgressRepository.class);
+        try (MockedStatic<ApplicationManager> appManagerMock = mockStatic(ApplicationManager.class)) {
+            Application application = mock(Application.class);
+            // 插件仅以 ReadingProgressRepository 接口注册,必须能按接口解析到实例
+            when(application.getService(ReadingProgressRepository.class)).thenReturn(repository);
+            appManagerMock.when(ApplicationManager::getApplication).thenReturn(application);
+
+            // pageIndex=0(新章节第一页)应写为页码 1,并带上章节名
+            ProgressSaveHelper.saveProgress(book, "c2", "第二章", 0);
+            verify(repository).updateProgress(book, "c2", "第二章", 0, 1);
+
+            // pageIndex=4 应写为页码 5
+            ProgressSaveHelper.saveProgress(book, "c2", "第二章", 4);
+            verify(repository).updateProgress(book, "c2", "第二章", 0, 5);
+        }
     }
 }
