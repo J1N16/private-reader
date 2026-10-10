@@ -1,5 +1,14 @@
 # Changelog 更新日志
 
+## [3.1.1] - 2026-10-10
+
+### 重构 | Refactor
+- 拆分 `NotificationServiceImpl` 中的章节变更事件处理为独立 `ChapterEventProcessor`,通过窄接口 `Host` 解耦(该服务 1186→1096 行),无行为变更 | Extracted chapter-change event handling from `NotificationServiceImpl` into a standalone `ChapterEventProcessor` decoupled via a narrow `Host` interface (service shrunk from 1186 to 1096 lines), with no behavior change
+
+### 质量与维护 | Quality and Maintenance
+- 新增 `ChapterEventProcessorTest` 4 个事件门控/同步/页码恢复测试(331 测试全通过) | Added 4 `ChapterEventProcessorTest` cases covering event gating, sync, and page restoration (331 tests passing)
+- JaCoCo LINE 覆盖率 39.13%→39.95%,回归护栏阈值 0.30→0.35 | JaCoCo LINE coverage 39.13%→39.95%, regression gate raised from 0.30 to 0.35
+
 ## [3.1.0] - 2026-10-10
 
 ### 修复 | Fixes

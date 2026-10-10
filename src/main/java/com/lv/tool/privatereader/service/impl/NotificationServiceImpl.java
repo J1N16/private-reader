@@ -23,6 +23,7 @@ import com.lv.tool.privatereader.repository.ReadingProgressRepository;
 import com.lv.tool.privatereader.service.BookService;
 import com.lv.tool.privatereader.service.ChapterService;
 import com.lv.tool.privatereader.service.NotificationService;
+import com.lv.tool.privatereader.service.impl.notification.ChapterEventProcessor;
 import com.lv.tool.privatereader.service.impl.notification.ChapterNavigationHelper;
 import com.lv.tool.privatereader.service.impl.notification.ChapterPaginationCache;
 import com.lv.tool.privatereader.service.impl.notification.NotificationBarModeServiceUtils;
@@ -45,6 +46,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.UnaryOperator;
 
 /**
  * NotificationService 实现类
@@ -87,7 +89,46 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
 
     // 加载状态标志
     private final AtomicBoolean isLoadingChapter = new AtomicBoolean(false);
-    private final AtomicBoolean isHandlingEvent = new AtomicBoolean(false);
+
+    // V16:章节变更事件处理拆分至独立处理器,本类仅通过窄接口 Host 回调
+    private final ChapterEventProcessor chapterEventProcessor;
+
+    /**
+     * 事件处理器宿主的窄接口实现。
+     * <p>将 {@link ChapterEventProcessor} 所需的最小能力映射到本服务的内部方法,
+     * 避免处理器直接依赖完整 API。
+     */
+    private final ChapterEventProcessor.Host eventProcessorHost = new ChapterEventProcessor.Host() {
+        @Override
+        public ReaderViewState getViewState() {
+            return NotificationServiceImpl.this.getViewState();
+        }
+
+        @Override
+        public void updateViewState(@NotNull UnaryOperator<ReaderViewState> updater) {
+            NotificationServiceImpl.this.updateViewState(updater);
+        }
+
+        @Override
+        public void setCurrentChapterContent(@NotNull String content) {
+            NotificationServiceImpl.this.setCurrentChapterContent(content);
+        }
+
+        @Override
+        public void showCurrentPageInternal(@NotNull Project project, @NotNull String title, @NotNull String content) {
+            NotificationServiceImpl.this.showCurrentPageInternal(project, title, content);
+        }
+
+        @Override
+        public void showError(@NotNull String title, @NotNull String message) {
+            NotificationServiceImpl.this.showError(title, message);
+        }
+
+        @Override
+        public void saveNotificationModeProgress() {
+            NotificationServiceImpl.this.saveNotificationModeProgress();
+        }
+    };
 
     /** 读取当前阅读状态的不可变快照 */
     private ReaderViewState getViewState() {
@@ -129,11 +170,17 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
         this.chapterChangeManager = chapterChangeManager;
         this.readingProgressRepository = readingProgressRepository;
         this.reactiveSchedulers = ReactiveSchedulers.getInstance();
+        this.chapterEventProcessor = new ChapterEventProcessor(
+                eventProcessorHost,
+                chapterService,
+                notificationSettings,
+                chapterChangeManager,
+                readingProgressRepository);
         this.messageBusConnection = ApplicationManager.getApplication().getMessageBus().connect(this);
         this.messageBusConnection.subscribe(CurrentChapterNotifier.TOPIC, new CurrentChapterNotifier() {
             @Override
             public void currentChapterChanged(Book changedBook, NovelParser.Chapter newChapter) {
-                handleChapterChangedEvent(changedBook, newChapter);
+                chapterEventProcessor.handleChapterChangedEvent(changedBook, newChapter);
             }
         });
     }
@@ -985,142 +1032,6 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
             ));
     }
 
-    private void handleChapterChangedEvent(Book changedBook, Chapter newChapter) {
- // 确保所有依赖的服务都已初始化
-        if (chapterChangeManager.getLastEventSource() != ChapterChangeEventSource.READER_PANEL) {
-            return;
-        }
-
-        if (!isHandlingEvent.compareAndSet(false, true)) {
-            LOG.debug("[事件处理] 正在处理另一个章节变更事件,忽略当前事件。");
-            return;
-        }
-
-        try {
-            LOG.debug("[事件处理] 接收到章节变更事件: 书籍={}, 新章节={}", changedBook.getTitle(), newChapter.title());
-
-            ReaderModeSettings readerModeSettings = ApplicationManager.getApplication().getService(ReaderModeSettings.class);
-            if (readerModeSettings == null || !readerModeSettings.isNotificationMode()) {
-                LOG.debug("[事件处理] 非通知栏模式,忽略章节变更事件。");
-                return;
-            }
-
-            Project[] openProjects = ProjectManager.getInstance().getOpenProjects();
-            if (openProjects.length == 0) {
-                LOG.warn("[事件处理] 没有打开的项目,无法处理章节变更事件并更新通知。");
-                return;
-            }
-            Project project = openProjects[0]; // 默认使用第一个打开的项目
-            if (openProjects.length > 1) {
-                LOG.warn("[事件处理] 有多个项目打开,将使用第一个项目: " + project.getName() + " 来更新通知。");
-            }
-
-            ReaderViewState currentState = getViewState();
-            // 检查书籍或章节是否真的改变了
-            if (currentState.getBook() != null && currentState.getBook().equals(changedBook) &&
-                currentState.getChapterId() != null && currentState.getChapterId().equals(newChapter.url())) {
-                LOG.debug("[事件处理] 书籍和章节未发生变化,无需更新通知。");
-                return;
-            }
-
-            LOG.info("[事件处理] 检测到章节变更 (之前: 书籍='" + (currentState.getBook() != null ? currentState.getBook().getTitle() : "无") +
-                     "', 章节ID='" + (currentState.getChapterId() != null ? currentState.getChapterId() : "无") +
-                     "'; 现在: 书籍='" + changedBook.getTitle() +
-                     "', 章节='" + newChapter.title() + "'), 准备在通知栏模式下更新显示。");
-
-            // 获取新章节内容 - 使用单一响应式链,减少线程切换
-            chapterService.getChapterContent(changedBook, newChapter.url())
-                .subscribeOn(Schedulers.io()) // 在IO线程执行耗时操作
-                .flatMap(content -> {
-                    if (content == null || content.isEmpty()) {
-                        LOG.warn("[事件处理] 获取到的新章节 '" + newChapter.title() + "' 内容为空,不更新通知。");
-                        return Single.error(new IllegalStateException("章节内容为空"));
-                    }
-
-                    // 异步获取章节标题
-                    return chapterService.getChapterTitle(changedBook.getId(), newChapter.url())
-                        .map(fetchedTitle -> {
-                            if (fetchedTitle == null || fetchedTitle.isEmpty() || fetchedTitle.startsWith("Error:")) {
-                                LOG.warn("[事件处理] 获取到的章节标题无效 ('" + fetchedTitle + "'),回退到 newChapter.title()");
-                                return newChapter.title();
-                            }
-                            return fetchedTitle;
-                        })
-                        .onErrorReturnItem(newChapter.title()) // 如果获取标题时出错,也使用默认标题
-                        .map(finalTitle -> new Object[]{content, finalTitle}); // 将内容和最终标题传递下去
-                })
-                .observeOn(Schedulers.io()) // 确保UI更新在UI线程
-                .subscribe(
-                    data -> {
-                        ApplicationManager.getApplication().invokeLater(() -> {
-                            try {
-                                String content = (String) data[0];
-                                String fetchedTitle = (String) data[1];
-
-                                // 更新当前状态
-                                updateViewState(s -> s.withChapter(changedBook, newChapter.url(), fetchedTitle));
-
-                                // 分页
-                                setCurrentChapterContent(content);
-                                List<String> pages = getViewState().getPages();
-                                if (pages.isEmpty()) {
-                                    LOG.warn("[事件处理] 新章节 '" + newChapter.title() + "' 分页后内容为空,无法显示通知。");
-                                    showError("章节内容为空", "无法在通知栏显示章节 " + newChapter.title());
-                                    return;
-                                }
-
-                                // 尝试恢复页码,否则显示第一页
-                                int pageToLoad = 1;
-                                try {
-                                    if (readingProgressRepository != null) {
-                                        Optional<BookProgressData> progressDataOpt = readingProgressRepository.getProgress(changedBook.getId());
-                                        if (progressDataOpt.isPresent()) {
-                                            BookProgressData progressData = progressDataOpt.get();
-                                            if (newChapter.url().equals(progressData.lastReadChapterId())) {
-                                                pageToLoad = progressData.lastReadPage();
-                                                LOG.debug("[事件处理] 成功恢复页码: " + pageToLoad + " for chapter " + newChapter.title());
-                                            }
-                                        }
-                                    }
-                                } catch (Exception e) {
-                                    LOG.error("[事件处理] 恢复页码时出错", e);
-                                }
-
-                                if (pageToLoad <= 0) {
-                                    pageToLoad = 1;
-                                } else if (!pages.isEmpty() && pageToLoad > pages.size()) {
-                                    pageToLoad = pages.size();
-                                } else if (pages.isEmpty()) {
-                                    pageToLoad = 1;
-                                }
-
-                                int pageIndex = pageToLoad - 1;
-                                updateViewState(s -> s.withPageIndex(pageIndex));
-
-                                String pageContentToShow = pages.get(pageIndex);
-                                String progressText = notificationSettings != null && notificationSettings.isShowReadingProgress() ?
-                                     "进度: 第 " + (pageIndex + 1) + " 页,共 " + pages.size() + " 页" : "";
-                                String notificationContent = pageContentToShow + (progressText.isEmpty() ? "" : "\n\n" + progressText);
-
-                                showCurrentPageInternal(project, fetchedTitle, notificationContent);
-                                LOG.info("[事件处理] 通知栏已更新到新章节 '" + newChapter.title() + "' 的第一页。");
-                                saveNotificationModeProgress(); // 保存进度
-                            } catch (Throwable t) {
-                                LOG.error("[事件处理] 在处理章节内容时发生未捕获的错误: " + t.getMessage(), t);
-                            }
-                        }, ModalityState.defaultModalityState());
-                    },
-                    error -> {
-                        LOG.error("[事件处理] 获取或处理新章节 '" + newChapter.title() + "' 内容失败: " + error.getMessage(), error);
-                        showError("加载章节失败", "无法加载章节 " + newChapter.title() + " 的内容: " + error.getMessage());
-                    }
-                );
-        } finally {
-            isHandlingEvent.set(false);
-        }
-    }
-
-    // Placed before handleChapterChangedEvent for logical grouping.
     /**
      * 从数据库恢复保存的页码
      *
