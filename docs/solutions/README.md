@@ -13,7 +13,8 @@
 ```
 docs/solutions/
 ├── README.md              ← 本文件:总索引 / 单一事实源
-├── OPTIMIZATION_V16.md    ← 最新优化轮次(V17 起顺延)
+├── OPTIMIZATION_V17.md    ← 最新优化轮次(V18 起顺延)
+├── OPTIMIZATION_V16.md
 ├── OPTIMIZATION_V15.md
 ├── OPTIMIZATION_V14.md
 ├── archive/               ← 已完成轮次的详细记录(12 份)
@@ -40,6 +41,7 @@ docs/solutions/
 | **V14** | **2026-09-20** | **3.0.0** | **P0/P1 落地:NotificationBarModeService 0%→74.79% 补测、NotificationServiceImpl 阅读仓库注入化收尾、NotificationDisplayManager 回调化+纯函数提取、ChapterListDialog 三处重复收敛+纯逻辑提取、RepositoryModule 评估保留(270→299)** | **299** | **36.35%** |
 | **V15** | **2026-10-09** | **3.0.0** | **修复缓存过期/容量设置不生效与启动清理失效(字段去重)、仓储启动清理回归补测(299→311)** | **311** | **38.34%** |
 | **V16** | **2026-10-10** | **3.1.0** | **拆分 `NotificationServiceImpl` 章节变更事件处理为 `ChapterEventProcessor`(窄接口 Host 解耦,代码 1186→1096 行)、新增 4 测试、阈值 0.30→0.35** | **331** | **39.95%** |
+| **V17** | **2026-10-10** | **3.1.1** | **拆分导航流水线为 `ChapterNavigator`(上/下章、末页、双数据源收敛,1096→923 行)、新增 8 测试** | **339** | **41.08%** |
 
 ## 三、当前状态(单一事实源)
 
@@ -53,19 +55,21 @@ docs/solutions/
 - **文件仓储**:`FileBookRepository` 拆分出 `BookJsonCodec`/`BookIndexStore`/`BookDetailsIo`(1295→762 行)
 - **注入收尾**:`NotificationServiceImpl` 阅读进度仓库四入构造器注入(消除按需 getService);`NotificationDisplayManager` 回调化+纯函数提取(展示层不再直接依赖容器)
 - **事件处理拆分**:`NotificationServiceImpl` 章节变更事件处理下沉至 `ChapterEventProcessor`(窄接口 `Host` 解耦,1186→1096 行)
+- **导航流水线拆分**:`NotificationServiceImpl` 章节导航下沉至 `ChapterNavigator`(上/下章、末页、双数据源收敛,1096→923 行)
 - **工程化**:JaCoCo 覆盖率护栏(当前 **0.30**,实测 36.35%)+ GitHub Actions CI(构建/测试/打包/`verifyPlugin`)
 
 ### 3.2 遗留事项(按文档轮次汇总)
 
 | 事项 | 来源 | 优先级 |
 |------|------|--------|
-| `NotificationServiceImpl` 仍有 ~1096 行,可继续拆导航流水线为 `ChapterNavigator` | V11/V13/V14/V16 遗留 | 低 |
+| `NotificationServiceImpl` 仍有 ~923 行,可评估拆分 Reactive 兼容路径 `showChapterContent(Book,...)`(~130 行,疑似无生产调用方) | V11/V13/V14/V16/V17 遗留 | 低 |
 | `ui/*`(actions/dialog/settings/ReaderPanel)依赖 EDT/Swing,0 覆盖,需真实 IDE 或 UI 测试框架 | V9-V14 遗留 | 中 |
 | `storage` 主体、`initialization` 为低覆盖保留方向 | V9/V10 遗留 | 低 |
 | `NotificationDisplayManager.showReadingNotification` 真实通知创建路径未覆盖(需 mockStatic 门面或 GUI 冒烟) | V14 遗留 | 中 |
 | 覆盖率实测 36.35%,阈值可上调至 0.33(余量 6.35pp) | V14 建议 | 低 |
 | 覆盖率实测 38.34%,阈值可上调至 0.35(余量 3.34pp) | V15 建议 | 低 |
 | 覆盖率实测 39.95%,阈值已于 V16 上调至 0.35(余量 4.95pp) | V16 完成 | — |
+| 覆盖率实测 41.08%(V17),阈值 0.35 仍有 6.08pp 余量 | V17 | 低 |
 | `verifyPlugin` 本地需联网下载 IDE 263 平台;**CI 的 verify-plugin job 有外网正常执行** | V13 遗留 | 环境 |
 
 ### 3.3 覆盖率阈值历史
@@ -77,15 +81,16 @@ docs/solutions/
 | 0.30 | V13 补测后(33.54%) | V13 |
 | 0.35 | V16 拆分 `ChapterEventProcessor` 并补测后(39.95%) | V16 |
 
-> V15 实测 LINE 达 38.34%;V16 拆分事件处理并补测后达 39.95%,阈值已上调至 0.35。
+> V15 实测 LINE 达 38.34%;V16 拆分事件处理并补测后达 39.95% 并将阈值上调至 0.35;
+> V17 拆分导航流水线补测后达 41.08%。
 
 ## 四、指标演进
 
-| 指标 | V8 | V9 | V10 | V11 | V12 | V13 | V14 | V15 | V16 |
-|------|----|----|----|----|----|----|----|----|----|
-| LINE | 18.24% | 28.02% | 31.02% | 31.49% | 31.48% | 33.54% | **36.35%** | **38.34%** | **39.95%** |
-| 测试数 | 99 | 209 | 236 | 248 | 249 | 270 | **299** | **311** | **331** |
-| 总行数 | 7581 | 7581 | 7581 | 7692 | 7692 | 7672 | 7653 | 7653 | 7912 |
+| 指标 | V8 | V9 | V10 | V11 | V12 | V13 | V14 | V15 | V16 | V17 |
+|------|----|----|----|----|----|----|----|----|----|----|
+| LINE | 18.24% | 28.02% | 31.02% | 31.49% | 31.48% | 33.54% | **36.35%** | **38.34%** | **39.95%** | **41.08%** |
+| 测试数 | 99 | 209 | 236 | 248 | 249 | 270 | **299** | **311** | **331** | **339** |
+| 总行数 | 7581 | 7581 | 7581 | 7692 | 7692 | 7672 | 7653 | 7653 | 7912 | 7939 |
 
 > 注:总行数为各轮报告的统计口径,代码持续变化,精确值以 JaCoCo 报告为准。
 
@@ -120,7 +125,8 @@ sed -i 's|](\./OPTIMIZATION|](../OPTIMIZATION|g' archive/OPTIMIZATION_V{n}.md
 
 | 文档 | 说明 |
 |------|------|
-| `OPTIMIZATION_V16.md` | 最新轮次:NotificationServiceImpl 事件处理拆分 / 阈值上调(V16) |
+| `OPTIMIZATION_V17.md` | 最新轮次:NotificationServiceImpl 导航流水线拆分 / ChapterNavigator(V17) |
+| `OPTIMIZATION_V16.md` | 章节变更事件拆分 `ChapterEventProcessor` / 阈值上调(V16) |
 | `OPTIMIZATION_V15.md` | 缓存设置字段去重 / 启动清理修复 / 仓储回归补测(V15) |
 | `OPTIMIZATION_V14.md` | 通知栏服务补测 / 注入收尾 / 展示层回调化 / 章节列表去重(V14) |
 | `OPTIMIZATION_V13.md` | 导航去重 / 网络缓存 / 仓储拆分 / service 补测(V13) |

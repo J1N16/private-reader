@@ -110,13 +110,13 @@
   <change-notes><![CDATA[
     <h3>Version 3.1.1</h3>
     <ul>
-      <li>Internal refactor: extracted notification-bar chapter-change event handling for maintainability (no behavior change)</li>
-      <li>Tests: added regression tests for chapter-change event handling and raised the coverage gate to 35%</li>
+      <li>Internal refactor: extracted notification-bar chapter-change handling and chapter navigation for maintainability (no behavior change)</li>
+      <li>Tests: added regression tests for both extracted components and raised the coverage gate to 35%</li>
     </ul>
     <h3>3.1.1 版本更新</h3>
     <ul>
-      <li>内部重构:拆分通知栏章节变更事件处理,提升可维护性(无行为变更)</li>
-      <li>测试:新增章节变更事件处理回归测试,覆盖率护栏上调至 35%</li>
+      <li>内部重构:拆分通知栏章节变更处理与章节导航,提升可维护性(无行为变更)</li>
+      <li>测试:为两个拆分组件补充回归测试,覆盖率护栏上调至 35%</li>
     </ul>
   ]]></change-notes>
 
