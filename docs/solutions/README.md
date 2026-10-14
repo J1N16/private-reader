@@ -13,7 +13,8 @@
 ```
 docs/solutions/
 ├── README.md              ← 本文件:总索引 / 单一事实源
-├── OPTIMIZATION_V29.md    ← 最新优化轮次(V30 起顺延)
+├── OPTIMIZATION_V30.md    ← 最新优化轮次(V31 起顺延)
+├── OPTIMIZATION_V29.md
 ├── OPTIMIZATION_V28.md
 ├── OPTIMIZATION_V27.md
 ├── OPTIMIZATION_V26.md
@@ -66,6 +67,7 @@ docs/solutions/
 | **V27** | **2026-10-10** | **3.1.1** | **`ConfigDiagnosticTool` 服务查询抽为 `DiagnosticsHosts.Host` 并补测(22.3%→74.0%)、接线 `NavigateChapter` 死意图、阈值 0.48→0.50** | **501** | **53.47%** |
 | **V28** | **2026-10-10** | **3.1.1** | **`FileStorageRepository` 注入基础路径(0%→81.2%)、`ExceptionHandler` 注入恢复宿主(24.4%→47.9%)、工具类补测、阈值 0.50→0.52** | **541** | **55.23%** |
 | **V29** | **2026-10-10** | **3.1.1** | **突破 UI 类零覆盖:headless 下补测三个设置面板(`NotificationReaderConfigurable` 100%、`ReaderConfigurable` 89.4%、`CacheConfigurable` 54.3%),阈值 0.52→0.56** | **571** | **59.53%** |
+| **V30** | **2026-10-10** | **3.1.1** | **补测 18 个 UI 动作类(mock `AnActionEvent`/`Presentation`)+ `NotificationServiceImpl` 活动会话状态机(42.6%→74.1%),阈值 0.56→0.60** | **630** | **63.70%** |
 
 ## 三、当前状态(单一事实源)
 
@@ -93,7 +95,8 @@ docs/solutions/
 - **诊断工具解耦**:`ConfigDiagnosticTool` 的服务查询抽为可注入 `DiagnosticsHosts.Host`,接线 `NavigateChapter` 死意图,LINE 51.38%→53.47%
 - **存储/恢复解耦**:`FileStorageRepository` 注入基础路径(0%→81.2%)、`ExceptionHandler` 注入 `RecoveryHost`(24.4%→47.9%),LINE 53.47%→55.23%
 - **UI 面板可测**:确认 headless 下 Swing/IntelliJ UI 组件可实例化,补测三个设置面板,LINE 55.23%→59.53%
-- **工程化**:JaCoCo 覆盖率护栏(当前 **0.56**,实测 59.53%)+ GitHub Actions CI(构建/测试/打包/`verifyPlugin`)
+- **UI 动作可测**:确认 `AnActionEvent`/`Presentation` 可 mock,补测 18 个动作类与通知服务活动会话状态机,LINE 59.53%→63.70%
+- **工程化**:JaCoCo 覆盖率护栏(当前 **0.60**,实测 63.70%)+ GitHub Actions CI(构建/测试/打包/`verifyPlugin`)
 
 ### 3.2 遗留事项(按文档轮次汇总)
 
@@ -131,6 +134,8 @@ docs/solutions/
 | 覆盖率实测 55.23%(V28),阈值已上调至 0.52(余量 3.23pp) | V28 完成 | — |
 | `ui/*` 可沿 V29 模式(headless + mockStatic 平台服务)继续补测 | V29 发现 | 中 |
 | 覆盖率实测 59.53%(V29),阈值已上调至 0.56(余量 3.53pp) | V29 完成 | — |
+| 三个 Dialog/`ReaderPanel`/`DiagnosticDialog` 因构造期深层平台服务(`ExperimentalUI`)`@NotNull` 断言,当前 mock 环境不可测 | V30 发现 | 高 |
+| 覆盖率实测 63.70%(V30),阈值已上调至 0.60(余量 3.70pp) | V30 完成 | — |
 | `verifyPlugin` 本地需联网下载 IDE 263 平台;**CI 的 verify-plugin job 有外网正常执行** | V13 遗留 | 环境 |
 
 ### 3.3 覆盖率阈值历史
@@ -150,21 +155,22 @@ docs/solutions/
 | 0.50 | V27 诊断工具解耦与 NavigateChapter 接线后(53.47%) | V27 |
 | 0.52 | V28 存储/异常恢复解耦与工具类补测后(55.23%) | V28 |
 | 0.56 | V29 三个设置面板 headless 补测后(59.53%) | V29 |
+| 0.60 | V30 UI 动作类与通知服务会话状态机补测后(63.70%) | V30 |
 
 > V15 实测 LINE 达 38.34%;V16 拆分事件处理并补测后达 39.95% 并将阈值上调至 0.35;
 > V17 拆分导航流水线补测后达 41.08%;V18 删死代码后达 41.45%;V19 拆进度逻辑后达 41.89%;V20 拆内容展示后达 42.44%;
 > V21 可测性改造监控器 + 缓存仓储 CRUD 补测后达 45.88%,阈值上调至 0.40;
 > V22 存储/网络可测性改造并补测后达 46.84%,阈值上调至 0.42;
 > V23 零覆盖工具类补测后达 49.34%,阈值上调至 0.45;V24 存储路径/书籍修复补测后达 50.29%,阈值上调至 0.46;
-> V25 通知展示/书籍服务补测后达 51.11%,阈值上调至 0.47;V26 ViewModel/IO 补测后达 51.38%,阈值上调至 0.48;V27 诊断工具解耦后达 53.47%,阈值上调至 0.50;V28 存储/异常恢复解耦后达 55.23%,阈值上调至 0.52;V29 设置面板补测后达 59.53%,阈值上调至 0.56。
+> V25 通知展示/书籍服务补测后达 51.11%,阈值上调至 0.47;V26 ViewModel/IO 补测后达 51.38%,阈值上调至 0.48;V27 诊断工具解耦后达 53.47%,阈值上调至 0.50;V28 存储/异常恢复解耦后达 55.23%,阈值上调至 0.52;V29 设置面板补测后达 59.53%,阈值上调至 0.56;V30 UI 动作类与会话状态机补测后达 63.70%,阈值上调至 0.60。
 
 ## 四、指标演进
 
-| 指标 | V8 | V9 | V10 | V11 | V12 | V13 | V14 | V15 | V16 | V17 | V18 | V19 | V20 | V21 | V22 | V23 | V24 | V25 | V26 | V27 | V28 | V29 |
-|------|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|
-| LINE | 18.24% | 28.02% | 31.02% | 31.49% | 31.48% | 33.54% | **36.35%** | **38.34%** | **39.95%** | **41.08%** | **41.45%** | **41.89%** | **42.44%** | **45.88%** | **46.84%** | **49.34%** | **50.29%** | **51.11%** | **51.38%** | **53.47%** | **55.23%** | **59.53%** |
-| 测试数 | 99 | 209 | 236 | 248 | 249 | 270 | **299** | **311** | **331** | **339** | **339** | **346** | **349** | **372** | **389** | **428** | **443** | **458** | **474** | **501** | **541** | **571** |
-| 总行数 | 7581 | 7581 | 7581 | 7692 | 7692 | 7672 | 7653 | 7653 | 7912 | 7939 | 7867 | 7876 | 7902 | 7907 | 7919 | 7918 | 7920 | 7920 | 7920 | 8010 | 8021 | 8021 |
+| 指标 | V8 | V9 | V10 | V11 | V12 | V13 | V14 | V15 | V16 | V17 | V18 | V19 | V20 | V21 | V22 | V23 | V24 | V25 | V26 | V27 | V28 | V29 | V30 |
+|------|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|
+| LINE | 18.24% | 28.02% | 31.02% | 31.49% | 31.48% | 33.54% | **36.35%** | **38.34%** | **39.95%** | **41.08%** | **41.45%** | **41.89%** | **42.44%** | **45.88%** | **46.84%** | **49.34%** | **50.29%** | **51.11%** | **51.38%** | **53.47%** | **55.23%** | **59.53%** | **63.70%** |
+| 测试数 | 99 | 209 | 236 | 248 | 249 | 270 | **299** | **311** | **331** | **339** | **339** | **346** | **349** | **372** | **389** | **428** | **443** | **458** | **474** | **501** | **541** | **571** | **630** |
+| 总行数 | 7581 | 7581 | 7581 | 7692 | 7692 | 7672 | 7653 | 7653 | 7912 | 7939 | 7867 | 7876 | 7902 | 7907 | 7919 | 7918 | 7920 | 7920 | 7920 | 8010 | 8021 | 8021 | 8021 |
 
 > 注:总行数为各轮报告的统计口径,代码持续变化,精确值以 JaCoCo 报告为准。
 
@@ -192,6 +198,11 @@ docs/solutions/
 20. **全局限长随机端口 server ≠ 目标端口可达**:`NetworkUtils.isHostReachable` 固定连 **80** 端口,本地 HttpServer 用随机端口永远打不通,断言应为 `false` 而非 `true`;测 URL 可访问性/测速才用本地 server(V28)。
 21. **headless 下 IntelliJ UI 组件其实可实例化**:`JPanel`/`JSpinner`/`JCheckBox`/`JComboBox` 以及 IntelliJ 的 `FormBuilder`/`JBLabel`/`JBCheckBox`/`LinkLabel`/`ComboBox` 在无 IDE 容器的 JUnit 进程中均可正常创建、读写与布局;面板所需的 `ApplicationManager`/`MessageBus`/`ProjectManager` 用 `mockStatic` 提供即可。**唯一要回避的是只在事件回调里触发的模态交互**(`ColorPicker.showDialog`、`Messages.showYesNoDialog`、`Desktop.getDesktop().open`),测试不点击即可绕开。据此可把「UI 类不可测」的假设彻底推翻,V29 一次性拿下三个配置面板共 469 行(V29)。
 22. **面板的「即时预览」监听器会与 apply 重复写入 settings**:带即时预览的设置面板,控件变更监听器先行写入、`apply()` 再写一次,`verify(settings).setX(...)` 会报 TooManyActualInvocations,应改用 `atLeastOnce()`;仅 `saveSettings()` 属于 apply 独有,可精确校验(V29)。
+23. **`Presentation` 必须用真实实例而非 mock**:动作类 `update()` 的典型写法是 `super.update(e)` 先 `setEnabled(...)`、随后 `if (!e.getPresentation().isEnabled()) return;` 读取**自己刚写入的值**。若 `Presentation` 是 mock,`isEnabled()` 恒为 `false`,子类逻辑永不可达,会误判成「未覆盖」。改用 `new Presentation()` 后行为真实,断言也应改为 `assertTrue(presentation.isEnabled())` 而非 `verify(...setEnabled(true))`(V30)。
+24. **`ModalityState.defaultModalityState()` 在 mock Application 下返回 null 并直接抛异常**:该方法标注 `@NotNull`,平台在返回空值时立即抛 `IllegalStateException`,导致 `application.invokeLater(runnable, ModalityState.defaultModalityState())` 的**参数求值阶段就失败——`invokeLater` 根本不会被调用**, UI 流水线静默失效(日志里能看到 `onNext` 却看不到回调内的任何输出)。解法:`mockStatic(ModalityState.class)` 令 `defaultModalityState()` 返回 mock 实例,并对 `invokeLater` 的**两个重载**都做同步执行桩(V30)。
+25. **`Single.just(null)` 会先于订阅抛 NPE**:Mockito `when(stub).thenReturn(Single.just(null))` 在**建立桩时**即触发 RxJava「item is null」NPE,并把 `UnfinishedStubbingException` 传染给后续用例。要模拟缺失值应使用 `Single.empty()`(或 `Maybe`),或不测该分支(V30)。
+26. **动作类的 `Messages` 重载要按实际调用匹配**:`RemoveBookAction` 的「未选书籍」分支调用 `Messages.showWarningDialog(Project, ...)`,而「无面板」分支调用 `Messages.showWarningDialog(Component, ...)`(Project 实现了 Component)。断言时 `eq(project)` 与 `any(Component.class)` 结果不同,须先读源码确认走哪个重载(V30)。
+27. **Dialog/`ReaderPanel` 构造成本远高于面板**:`AddBookDialog` 等 `DialogWrapper` 子类构造时会查找 `ExperimentalUI` 等深层平台服务,在 mock `Application` 下抛 `Cannot find service com.intellij.ui.ExperimentalUI`;`ReaderPanel` 构造 `SimpleToolWindowPanel` 同理。此类 UI 需真实 IDE 测试框架,不宜强行单测(V30)。
 
 ## 六、归档流程
 
@@ -211,7 +222,8 @@ sed -i 's|](\./OPTIMIZATION|](../OPTIMIZATION|g' archive/OPTIMIZATION_V{n}.md
 
 | 文档 | 说明 |
 |------|------|
-| `OPTIMIZATION_V29.md` | 最新轮次:设置面板 headless 补测 + 阈值上调 0.56(V29) |
+| `OPTIMIZATION_V30.md` | 最新轮次:UI 动作类与通知服务会话状态机补测 + 阈值上调 0.60(V30) |
+| `OPTIMIZATION_V29.md` | 设置面板 headless 补测 + 阈值上调 0.56(V29) |
 | `OPTIMIZATION_V28.md` | 存储/异常恢复解耦与工具类补测 + 阈值上调 0.52(V28) |
 | `OPTIMIZATION_V27.md` | 诊断工具解耦与 NavigateChapter 接线 + 阈值上调 0.50(V27) |
 | `OPTIMIZATION_V26.md` | ReaderViewModel 意图/书籍 IO 补测 + 阈值上调 0.48(V26) |

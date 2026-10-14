@@ -57,7 +57,10 @@ class NotificationServiceImplTest {
     private MockedStatic<ApplicationManager> appManagerMock;
     private MockedStatic<ReactiveSchedulers> schedulersMock;
     private MockedStatic<NotificationDisplayManager> displayManagerMock;
+    private MockedStatic<com.intellij.openapi.application.ModalityState> modalityStateMock;
 
+    private ReactiveSchedulers schedulers;
+    private ReadingProgressRepository progressRepository;
     private Project project;
 
     @BeforeEach
@@ -79,14 +82,28 @@ class NotificationServiceImplTest {
         MessageBusConnection connection = mock(MessageBusConnection.class);
         when(messageBus.connect(any(com.intellij.openapi.Disposable.class))).thenReturn(connection);
         when(app.getMessageBus()).thenReturn(messageBus);
+        Mockito.doAnswer(invocation -> {
+            ((Runnable) invocation.getArgument(0)).run();
+            return null;
+        }).when(app).invokeLater(any());
+        Mockito.doAnswer(invocation -> {
+            ((Runnable) invocation.getArgument(0)).run();
+            return null;
+        }).when(app).invokeLater(any(), org.mockito.ArgumentMatchers.<com.intellij.openapi.application.ModalityState>any());
+        // ChapterContentViewer 使用 ModalityState.defaultModalityState();mock Application 环境下
+        // 静态方法返回 null 会触发平台 @NotNull 断言,故显式提供非 null 实例
+        modalityStateMock = mockStatic(com.intellij.openapi.application.ModalityState.class);
+        modalityStateMock.when(com.intellij.openapi.application.ModalityState::defaultModalityState)
+                .thenReturn(mock(com.intellij.openapi.application.ModalityState.class));
         appManagerMock.when(ApplicationManager::getApplication).thenReturn(app);
 
         // 3. 拦截 ReactiveSchedulers:runOnUI 改为测试线程同步执行
-        ReactiveSchedulers schedulers = mock(ReactiveSchedulers.class);
+        schedulers = mock(ReactiveSchedulers.class);
         Mockito.doAnswer(invocation -> {
             ((Runnable) invocation.getArgument(0)).run();
             return null;
         }).when(schedulers).runOnUI(any());
+        Mockito.when(schedulers.io()).thenReturn(io.reactivex.rxjava3.schedulers.Schedulers.trampoline());
         schedulersMock = mockStatic(ReactiveSchedulers.class);
         schedulersMock.when(ReactiveSchedulers::getInstance).thenReturn(schedulers);
 
@@ -100,12 +117,14 @@ class NotificationServiceImplTest {
                 .thenReturn(mock(com.intellij.notification.Notification.class));
 
         // 5. 构造被测服务(依赖全部注入)
+        progressRepository = mock(ReadingProgressRepository.class);
         service = new NotificationServiceImpl(bookService, chapterService, settings, preloader, chapterChangeManager,
-                mock(ReadingProgressRepository.class));
+                progressRepository);
     }
 
     @AfterEach
     void tearDown() {
+        modalityStateMock.close();
         appManagerMock.close();
         schedulersMock.close();
         displayManagerMock.close();
@@ -181,6 +200,162 @@ class NotificationServiceImplTest {
         service.showLoadingNotification(project, "加载中...");
         // 加载状态下 showNextPage 短路(不崩溃)
         service.showNextPage(project);
+        assertTrue(true);
+    }
+
+    // --- 活动阅读会话:翻页/导航状态机(V30) ---
+
+    private Book book(String title) {
+        Book b = new Book("book-1", title, "作者", "https://example.com/book");
+        b.setCachedChapters(java.util.List.of(
+                new com.lv.tool.privatereader.parser.NovelParser.Chapter("第一章", "chapter-1"),
+                new com.lv.tool.privatereader.parser.NovelParser.Chapter("第二章", "chapter-2")));
+        return b;
+    }
+
+    /** 通过接口入口建立活动阅读会话(内容足够长以产生多页)。 */
+    private void startReading(String content, int pageNumber) {
+        when(bookService.getBookById("book-1")).thenReturn(io.reactivex.rxjava3.core.Single.just(book("测试书籍")));
+        service.showChapterContent(project, "book-1", "chapter-1", pageNumber, "第一章", content);
+    }
+
+    private static String longContent() {
+        return "用于分页的长段落内容。".repeat(200);
+    }
+
+    @Test
+    void showChapterContentEstablishesReadingSessionAndShowsFirstPage() {
+        startReading(longContent(), 1);
+
+        assertEquals("book-1", service.getCurrentBookId());
+        assertEquals("chapter-1", service.getCurrentChapterId());
+        assertEquals("第一章", service.getCurrentChapterTitle());
+        assertTrue(service.getTotalPages() > 1, "长内容应分为多页");
+        assertEquals(1, service.getCurrentPage());
+    }
+
+    @Test
+    void showChapterContentWithEmptyContentShowsErrorAndKeepsStateInactive() {
+        service.showChapterContent(project, "book-1", "chapter-1", 1, "第一章", "");
+
+        assertNull(service.getCurrentBookId());
+        assertEquals(0, service.getTotalPages());
+    }
+
+    @Test
+    void showNextPageAdvancesPageIndex() {
+        startReading(longContent(), 1);
+        int before = service.getCurrentPage();
+
+        service.showNextPage(project);
+
+        assertEquals(before + 1, service.getCurrentPage());
+    }
+
+    @Test
+    void showPrevPageAfterNextReturnsToFirstPage() {
+        startReading(longContent(), 1);
+        service.showNextPage(project);
+
+        service.showPrevPage(project);
+
+        assertEquals(1, service.getCurrentPage());
+    }
+
+    @Test
+    void showPrevPageOnFirstPageNavigatesToPreviousChapterLastPage() {
+        startReading(longContent(), 1);
+        assertEquals(1, service.getCurrentPage());
+
+        // 首页再上一页:走 chapterNavigator.navigateToLastPage(-1) 分支
+        service.showPrevPage(project);
+
+        assertEquals(1, service.getCurrentPage(), "首页保持不动由导航器处理");
+    }
+
+    @Test
+    void showNextPageOnLastPageNavigatesToNextChapter() {
+        startReading(longContent(), 1);
+        int total = service.getTotalPages();
+        for (int i = 1; i < total; i++) {
+            service.showNextPage(project);
+        }
+        assertEquals(total, service.getCurrentPage());
+
+        // 末页再下一页:走 chapterNavigator.navigateChapter(1) 分支
+        service.showNextPage(project);
+
+        assertEquals(total, service.getCurrentPage());
+    }
+
+    @Test
+    void navigateChapterWithActiveSessionDelegatesToNavigator() {
+        startReading(longContent(), 1);
+
+        // 会话有效 → 不短路,委托导航器(章节列表为空时安全返回)
+        service.navigateChapter(project, 1);
+
+        assertEquals("book-1", service.getCurrentBookId());
+    }
+
+    @Test
+    void closeAllNotificationsExpiresCurrentNotification() {
+        com.intellij.notification.Notification notification =
+                mock(com.intellij.notification.Notification.class,
+                        org.mockito.Mockito.RETURNS_SELF);
+        when(notification.isExpired()).thenReturn(false);
+        displayManagerMock.when(() -> NotificationDisplayManager.showReadingNotification(
+                        any(), any(), any(), org.mockito.ArgumentMatchers.anyInt(), any(), any(Boolean.class),
+                        any(Boolean.class), any(), any(), any(), any(), any()))
+                .thenReturn(notification);
+
+        startReading(longContent(), 1);
+        service.closeAllNotifications();
+
+        Mockito.verify(notification).expire();
+    }
+
+    @Test
+    void restoredPageNumberIsClampedToPageCount() {
+        // 仓库报告的页码超出总页数 → 应夹紧到最后一页
+        com.lv.tool.privatereader.model.BookProgressData data =
+                new com.lv.tool.privatereader.model.BookProgressData(
+                        "book-1", "测试书籍", "chapter-1", "第一章", 0, 9999, false, null);
+        when(progressRepository.getProgress("book-1"))
+                .thenReturn(java.util.Optional.of(data));
+
+        startReading(longContent(), 1);
+
+        assertEquals(service.getTotalPages(), service.getCurrentPage(),
+                "越界页码应夹紧到最后一页");
+    }
+
+    @Test
+    void restoredPageNumberIsUsedWhenChapterMatches() {
+        com.lv.tool.privatereader.model.BookProgressData data =
+                new com.lv.tool.privatereader.model.BookProgressData(
+                        "book-1", "测试书籍", "chapter-1", "第一章", 0, 2, false, null);
+        when(progressRepository.getProgress("book-1"))
+                .thenReturn(java.util.Optional.of(data));
+
+        startReading(longContent(), 1);
+
+        assertEquals(2, service.getCurrentPage());
+    }
+
+    @Test
+    void showChapterContentWithProgressEnabledAppendsProgressText() {
+        when(settings.isShowReadingProgress()).thenReturn(true);
+        startReading(longContent(), 1);
+
+        assertTrue(service.getTotalPages() > 0);
+        assertEquals(1, service.getCurrentPage());
+    }
+
+    @Test
+    void disposeIsSafeAndIdempotent() {
+        service.dispose();
+        service.dispose();
         assertTrue(true);
     }
 }

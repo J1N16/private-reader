@@ -35,6 +35,9 @@
 - JaCoCo LINE 覆盖率 53.47%→55.23%,回归护栏阈值 0.50→0.52(541 测试全通过) | JaCoCo LINE coverage 53.47%→55.23%, regression gate raised from 0.50 to 0.52 (541 tests passing)
 - 突破 UI 类零覆盖:确认 headless JUnit 环境下 Swing 与 IntelliJ UI 组件可实例化,由此补测三个设置面板 —— `NotificationReaderConfigurable` 0%→100%、`ReaderConfigurable` 0%→89.4%、`CacheConfigurable` 0%→54.3%,共新增 29 个测试 | Broke the zero-coverage barrier for UI classes: verified that Swing and IntelliJ UI components are instantiable in a headless JUnit environment, then covered three settings panels — `NotificationReaderConfigurable` 0%→100%, `ReaderConfigurable` 0%→89.4%, `CacheConfigurable` 0%→54.3%, adding 29 tests
 - JaCoCo LINE 覆盖率 55.23%→59.53%,回归护栏阈值 0.52→0.56(571 测试全通过) | JaCoCo LINE coverage 55.23%→59.53%, regression gate raised from 0.52 to 0.56 (571 tests passing)
+- 把 V29 的「UI 可测」结论推进到 `ui/actions`:确认 `AnActionEvent`/`Presentation` 可 mock,新增 `ActionsTest` 47 个测试覆盖 18 个动作类的 `update()` 启停契约与 `actionPerformed()` 委派/早退分支 | Extended V29's "UI is testable" finding to `ui/actions`: verified `AnActionEvent`/`Presentation` are mockable, adding 47 `ActionsTest` cases covering the `update()` enablement contract and `actionPerformed()` delegation/early-exit branches of 18 action classes
+- 扩展 `NotificationServiceImplTest`(8→20)覆盖活动阅读会话状态机,`NotificationServiceImpl` 42.6%→74.1%；期间定位并修复测试基建问题:`ModalityState.defaultModalityState()` 在 mock Application 下返回 null 会令 UI 回调静默不执行 | Extended `NotificationServiceImplTest` (8→20) to cover the active reading-session state machine, lifting `NotificationServiceImpl` 42.6%→74.1%; this surfaced and fixed a test-harness issue where `ModalityState.defaultModalityState()` returning null under a mocked Application silently suppressed UI callbacks
+- JaCoCo LINE 覆盖率 59.53%→63.70%,回归护栏阈值 0.56→0.60(630 测试全通过) | JaCoCo LINE coverage 59.53%→63.70%, regression gate raised from 0.56 to 0.60 (630 tests passing)
 
 ## [3.1.0] - 2026-10-10
 

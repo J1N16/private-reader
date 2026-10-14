@@ -95,7 +95,10 @@ jacocoTestCoverageVerification {
                 // V29 确认 headless 下 Swing/IntelliJ UI 组件可实例化,补测三个设置面板
                 // (NotificationReaderConfigurable 100%/ReaderConfigurable 89.4%/CacheConfigurable 54.3%)
                 // 后 LINE 59.53%(4775/8021),阈值上调至 0.56(余量 3.5pp)
-                minimum = 0.56
+                // V30 确认 AnActionEvent/Presentation 可 mock,补测 18 个 UI 动作类与
+                // NotificationServiceImpl 活动会话状态机(42.6%→74.1%)后 LINE 63.70%(5109/8021),
+                // 阈值上调至 0.60(余量 3.7pp)
+                minimum = 0.60
             }
         }
     }
