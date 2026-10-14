@@ -98,7 +98,10 @@ jacocoTestCoverageVerification {
                 // V30 确认 AnActionEvent/Presentation 可 mock,补测 18 个 UI 动作类与
                 // NotificationServiceImpl 活动会话状态机(42.6%→74.1%)后 LINE 63.70%(5109/8021),
                 // 阈值上调至 0.60(余量 3.7pp)
-                minimum = 0.60
+                // V31 为 StorageManager 注入 legacy 目录以测迁移(44.2%→85.2%)、
+                // 补测 PluginConfigurable(0%→94.1%)与 RepositoryModule(3.0%→90.9%)后
+                // LINE 65.18%(5231/8025),阈值上调至 0.61(余量 4.2pp)
+                minimum = 0.61
             }
         }
     }

@@ -40,9 +40,19 @@ public final class StorageManager {
     private final Path cachePath;
     private final Path settingsPath;
     private final Path backupPath;
+
+    /**
+     * 旧版本数据根目录(IDEA 配置目录下的 {@code private-reader})。
+     *
+     * <p>V31:原先在 {@link #migrateFromOldLocation()} 内联调用
+     * {@code PathManager.getConfigPath()},容器外不可测;现抽为可注入字段,
+     * 默认构造器仍从 {@code PathManager} 取值,生产行为不变。</p>
+     */
+    private final Path legacyBasePath;
     
     public StorageManager() {
-        this(Path.of(System.getProperty("user.home"), ".private-reader"));
+        this(Path.of(System.getProperty("user.home"), ".private-reader"),
+                Path.of(PathManager.getConfigPath(), "private-reader"));
     }
 
     /**
@@ -51,6 +61,16 @@ public final class StorageManager {
      * @param baseStoragePath 基础存储目录
      */
     StorageManager(Path baseStoragePath) {
+        this(baseStoragePath, Path.of(PathManager.getConfigPath(), "private-reader"));
+    }
+
+    /**
+     * 包级构造器:同时注入基础目录与旧版本目录(V31),使迁移逻辑可在容器外测试。
+     *
+     * @param baseStoragePath 基础存储目录
+     * @param legacyBasePath  旧版本数据根目录
+     */
+    StorageManager(Path baseStoragePath, Path legacyBasePath) {
         LOG.info("初始化 StorageManager,基础目录: " + baseStoragePath);
 
         this.baseStoragePath = baseStoragePath;
@@ -58,6 +78,7 @@ public final class StorageManager {
         this.cachePath = baseStoragePath.resolve("cache");
         this.settingsPath = baseStoragePath.resolve("settings");
         this.backupPath = baseStoragePath.resolve("backup");
+        this.legacyBasePath = legacyBasePath;
 
         // 创建存储目录结构
         createStorageDirectories();
@@ -103,8 +124,8 @@ public final class StorageManager {
      */
     private void migrateFromOldLocation() {
         try {
-            // 获取旧的存储路径（IDEA配置目录）
-            Path oldBasePath = Path.of(PathManager.getConfigPath(), "private-reader");
+            // 获取旧的存储路径(IDEA配置目录)
+            Path oldBasePath = legacyBasePath;
             Path oldBooksPath = oldBasePath.resolve("books");
             
             // 如果旧目录存在且新目录为空，执行迁移
