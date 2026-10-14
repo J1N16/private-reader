@@ -45,6 +45,7 @@ class ReaderModeSwitcherTest {
     private NotificationReaderSettings notificationReaderSettings;
     private MessageBusConnection connection;
     private ProjectManager projectManager;
+    private Application application;
 
     @BeforeEach
     void setUp() {
@@ -53,11 +54,16 @@ class ReaderModeSwitcherTest {
         notificationReaderSettings = mock(NotificationReaderSettings.class);
         connection = mock(MessageBusConnection.class);
 
-        Application application = mock(Application.class, RETURNS_DEEP_STUBS);
+        application = mock(Application.class, RETURNS_DEEP_STUBS);
         MessageBus messageBus = mock(MessageBus.class);
         when(application.getMessageBus()).thenReturn(messageBus);
         when(messageBus.connect(any(com.intellij.openapi.Disposable.class))).thenReturn(connection);
         when(application.getService(NotificationBarModeService.class)).thenReturn(mock(NotificationBarModeService.class));
+        // V32:让 invokeLater 同步执行,以便覆盖隐藏/显示工具窗口的 lambda 体
+        org.mockito.Mockito.doAnswer(inv -> {
+            ((Runnable) inv.getArgument(0)).run();
+            return null;
+        }).when(application).invokeLater(any(Runnable.class));
 
         appMgr = mockStatic(ApplicationManager.class);
         appMgr.when(ApplicationManager::getApplication).thenReturn(application);
@@ -188,5 +194,163 @@ class ReaderModeSwitcherTest {
         switcher.dispose();
         switcher.dispose();
         // 无异常即通过(connection 已随父 Disposable 释放)
+    }
+
+    // --- V32 补充:invokeLater 同步化后的窗口隐藏/显示与初始模式应用 ---
+
+    @Test
+    void notificationModeHidesVisibleToolWindowOnUiThread() {
+        when(readerModeSettings.isNotificationMode()).thenReturn(true);
+        when(notificationService.showInfo(any(), any()))
+                .thenReturn(Single.just(mock(com.intellij.notification.Notification.class)));
+
+        Project project = mock(Project.class);
+        when(project.isDisposed()).thenReturn(false);
+        when(project.getName()).thenReturn("proj");
+        when(projectManager.getOpenProjects()).thenReturn(new Project[]{project});
+
+        ToolWindowManager twm = mock(ToolWindowManager.class);
+        ToolWindow toolWindow = mock(ToolWindow.class);
+        when(toolWindow.isVisible()).thenReturn(true);
+        when(twm.getToolWindow("PrivateReader")).thenReturn(toolWindow);
+        try (MockedStatic<ToolWindowManager> twmStatic = mockStatic(ToolWindowManager.class)) {
+            twmStatic.when(() -> ToolWindowManager.getInstance(project)).thenReturn(twm);
+
+            ReaderModeSwitcher switcher = newSwitcher();
+
+            // invokeLater 同步执行 → 确实隐藏了可见的工具窗口
+            verify(toolWindow).hide(null);
+            switcher.dispose();
+        }
+    }
+
+    @Test
+    void panelModeShowsHiddenToolWindowOnUiThread() {
+        when(readerModeSettings.isNotificationMode()).thenReturn(false);
+
+        Project project = mock(Project.class);
+        when(project.isDisposed()).thenReturn(false);
+        when(project.getName()).thenReturn("proj");
+        when(projectManager.getOpenProjects()).thenReturn(new Project[]{project});
+
+        ToolWindowManager twm = mock(ToolWindowManager.class);
+        ToolWindow toolWindow = mock(ToolWindow.class);
+        when(toolWindow.isAvailable()).thenReturn(true);
+        when(toolWindow.isVisible()).thenReturn(false);
+        when(twm.getToolWindow("PrivateReader")).thenReturn(toolWindow);
+        try (MockedStatic<ToolWindowManager> twmStatic = mockStatic(ToolWindowManager.class)) {
+            twmStatic.when(() -> ToolWindowManager.getInstance(project)).thenReturn(twm);
+
+            ReaderModeSwitcher switcher = newSwitcher();
+
+            verify(toolWindow).show(null);
+            switcher.dispose();
+        }
+    }
+
+    @Test
+    void panelModeWithoutToolWindowDoesNotThrow() {
+        when(readerModeSettings.isNotificationMode()).thenReturn(false);
+
+        Project project = mock(Project.class);
+        when(project.isDisposed()).thenReturn(false);
+        when(project.getName()).thenReturn("proj");
+        when(projectManager.getOpenProjects()).thenReturn(new Project[]{project});
+
+        ToolWindowManager twm = mock(ToolWindowManager.class);
+        when(twm.getToolWindow("PrivateReader")).thenReturn(null);
+        try (MockedStatic<ToolWindowManager> twmStatic = mockStatic(ToolWindowManager.class)) {
+            twmStatic.when(() -> ToolWindowManager.getInstance(project)).thenReturn(twm);
+
+            // 关闭通知仍然发生;工具窗口缺失只走 warn 分支
+            ReaderModeSwitcher switcher = newSwitcher();
+            verify(notificationService).closeAllNotifications();
+            switcher.dispose();
+        }
+    }
+
+    @Test
+    void applyInitialModeForProjectInPanelModeReadsSettingsAndApplies() {
+        when(readerModeSettings.isNotificationMode()).thenReturn(false);
+
+        Project project = mock(Project.class);
+        when(project.isDisposed()).thenReturn(false);
+        when(project.getName()).thenReturn("proj");
+        when(projectManager.getOpenProjects()).thenReturn(new Project[]{project});
+
+        ToolWindowManager twm = mock(ToolWindowManager.class);
+        ToolWindow toolWindow = mock(ToolWindow.class);
+        when(toolWindow.isAvailable()).thenReturn(true);
+        when(toolWindow.isVisible()).thenReturn(true);
+        when(twm.getToolWindow("PrivateReader")).thenReturn(toolWindow);
+        try (MockedStatic<ToolWindowManager> twmStatic = mockStatic(ToolWindowManager.class)) {
+            twmStatic.when(() -> ToolWindowManager.getInstance(project)).thenReturn(twm);
+
+            ReaderModeSwitcher switcher = newSwitcher();
+            org.mockito.Mockito.clearInvocations(notificationService);
+
+            switcher.applyInitialModeForProject(project);
+
+            // 初始化态下会重新读取设置并应用面板模式
+            verify(readerModeSettings, org.mockito.Mockito.atLeastOnce()).isNotificationMode();
+            verify(notificationService).closeAllNotifications();
+            switcher.dispose();
+        }
+    }
+
+    @Test
+    void applyInitialModeForProjectInNotificationModeBindsBarService() {
+        when(readerModeSettings.isNotificationMode()).thenReturn(true);
+        when(notificationService.showInfo(any(), any()))
+                .thenReturn(Single.just(mock(com.intellij.notification.Notification.class)));
+        NotificationBarModeService barService = mock(NotificationBarModeService.class);
+        when(application.getService(NotificationBarModeService.class)).thenReturn(barService);
+
+        Project project = mock(Project.class);
+        when(project.isDisposed()).thenReturn(false);
+        when(project.getName()).thenReturn("proj");
+        when(projectManager.getOpenProjects()).thenReturn(new Project[]{project});
+
+        ToolWindowManager twm = mock(ToolWindowManager.class);
+        ToolWindow toolWindow = mock(ToolWindow.class);
+        when(toolWindow.isVisible()).thenReturn(false);
+        when(twm.getToolWindow("PrivateReader")).thenReturn(toolWindow);
+        try (MockedStatic<ToolWindowManager> twmStatic = mockStatic(ToolWindowManager.class)) {
+            twmStatic.when(() -> ToolWindowManager.getInstance(project)).thenReturn(twm);
+
+            ReaderModeSwitcher switcher = newSwitcher();
+            org.mockito.Mockito.clearInvocations(barService);
+
+            switcher.applyInitialModeForProject(project);
+
+            // applyModeForProject 与 applyInitialModeForProject 都会绑定一次
+            verify(barService, org.mockito.Mockito.atLeastOnce()).setProject(project);
+            switcher.dispose();
+        }
+    }
+
+    @Test
+    void defaultConstructorResolvesServicesFromApplication() {
+        when(application.getService(NotificationService.class)).thenReturn(notificationService);
+        when(application.getService(ReaderModeSettings.class)).thenReturn(readerModeSettings);
+        when(application.getService(NotificationReaderSettings.class)).thenReturn(notificationReaderSettings);
+        when(readerModeSettings.isNotificationMode()).thenReturn(false);
+        when(projectManager.getOpenProjects()).thenReturn(new Project[0]);
+
+        ReaderModeSwitcher switcher = new ReaderModeSwitcher();
+
+        verify(connection).subscribe(eq(ReaderModeSettings.TOPIC), any());
+        switcher.dispose();
+    }
+
+    @Test
+    void nullNotificationReaderSettingsDisablesAutoReadWithoutFailing() {
+        when(readerModeSettings.isNotificationMode()).thenReturn(false);
+        when(projectManager.getOpenProjects()).thenReturn(new Project[0]);
+
+        ReaderModeSwitcher switcher = new ReaderModeSwitcher(notificationService, readerModeSettings, null);
+
+        verify(connection).subscribe(eq(ReaderModeSettings.TOPIC), any());
+        switcher.dispose();
     }
 }

@@ -307,4 +307,125 @@ class NotificationBarModeServiceTest {
         // 翻页应作用于回退解析出的项目
         verify(notificationService).showNextPage(otherProject);
     }
+
+    // --- V32 补充:无项目守卫 / 页码夹紧 / 状态清理 / 默认构造器 ---
+
+    @Test
+    void activateClampsPageNumberIntoValidRange() {
+        // 请求页码远超总页数 → 应夹紧到总页数
+        when(notificationService.calculateTotalPages(anyString())).thenReturn(5);
+
+        service.activateNotificationBarMode(project, "b1", "c1", 99);
+
+        verify(notificationService).showChapterContent(any(Project.class), eq("b1"), eq("c1"), eq(5),
+                anyString(), anyString());
+        assertEquals(5, service.getCurrentPageNumberForTest());
+    }
+
+    @Test
+    void activateClampsNonPositivePageNumberToOne() {
+        when(notificationService.calculateTotalPages(anyString())).thenReturn(3);
+
+        service.activateNotificationBarMode(project, "b1", "c1", 0);
+
+        verify(notificationService).showChapterContent(any(Project.class), eq("b1"), eq("c1"), eq(1),
+                anyString(), anyString());
+    }
+
+    @Test
+    void handleNextChapterActionWithoutProjectIsNoOp() {
+        when(project.isDisposed()).thenReturn(true);
+        when(ProjectManager.getInstance().getOpenProjects()).thenReturn(new Project[0]);
+
+        service.handleNextChapterAction();
+
+        verify(notificationService, never()).navigateChapter(any(), anyInt());
+    }
+
+    @Test
+    void handlePrevChapterActionWithoutProjectIsNoOp() {
+        when(project.isDisposed()).thenReturn(true);
+        when(ProjectManager.getInstance().getOpenProjects()).thenReturn(new Project[0]);
+
+        service.handlePrevChapterAction();
+
+        verify(notificationService, never()).navigateChapter(any(), anyInt());
+    }
+
+    @Test
+    void pageActionWithoutProjectIsNoOp() {
+        when(project.isDisposed()).thenReturn(true);
+        when(ProjectManager.getInstance().getOpenProjects()).thenReturn(new Project[0]);
+
+        service.handleNextPageAction();
+
+        verify(notificationService, never()).showNextPage(any());
+    }
+
+    @Test
+    void deactivateClearsCurrentPositionState() {
+        when(notificationService.getCurrentBookId()).thenReturn("b1");
+        when(notificationService.getCurrentChapterId()).thenReturn("c1");
+        when(notificationService.getCurrentPage()).thenReturn(2);
+        service.handleNextChapterAction(project);
+        assertEquals("c1", service.getCurrentChapterIdForTest());
+
+        service.deactivateNotificationBarMode();
+
+        assertEquals(null, service.getCurrentBookIdForTest());
+        assertEquals(null, service.getCurrentChapterIdForTest());
+        assertEquals(0, service.getCurrentPageNumberForTest());
+    }
+
+    @Test
+    void settingsChangedWithoutProjectSkipsRefresh() {
+        // 未调用 setProject 的实例:project 字段为 null
+        NotificationBarModeService unbound = new NotificationBarModeService(
+                readerModeSettings, notificationService, chapterService, bookService,
+                readingProgressRepository, notificationReaderSettings);
+
+        unbound.settingsChanged();
+
+        verify(notificationService, never()).showChapterContent(any(), anyString(), anyString(), anyInt(),
+                anyString(), anyString());
+    }
+
+    @Test
+    void settingsChangedWithModeActiveButNoBookSkipsRefresh() {
+        when(readerModeSettings.getCurrentMode()).thenReturn(ReaderModeSettings.Mode.NOTIFICATION_BAR);
+        // 活动模式但 currentBookId 为空 → 跳过
+        service.settingsChanged();
+
+        verify(notificationService, never()).showChapterContent(any(), anyString(), anyString(), anyInt(),
+                anyString(), anyString());
+    }
+
+    @Test
+    void setProjectIgnoresDisposedProject() {
+        Project disposed = mock(Project.class);
+        when(disposed.isDisposed()).thenReturn(true);
+        service.setProject(disposed);
+
+        when(notificationService.getCurrentBookId()).thenReturn("b1");
+        when(notificationService.getCurrentChapterId()).thenReturn("c1");
+        when(notificationService.getCurrentPage()).thenReturn(1);
+        service.handleNextPageAction();
+
+        // 已释放的项目被忽略,仍使用原项目
+        verify(notificationService).showNextPage(project);
+        verify(notificationService, never()).showNextPage(disposed);
+    }
+
+    @Test
+    void getInstanceDelegatesToApplicationService() {
+        appManagerMock.when(() -> ApplicationManager.getApplication().getService(NotificationBarModeService.class))
+                .thenReturn(service);
+
+        org.junit.jupiter.api.Assertions.assertSame(service, NotificationBarModeService.getInstance());
+    }
+
+    @Test
+    void disposeIsSafe() {
+        service.dispose();
+    }
 }

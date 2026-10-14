@@ -101,7 +101,11 @@ jacocoTestCoverageVerification {
                 // V31 为 StorageManager 注入 legacy 目录以测迁移(44.2%→85.2%)、
                 // 补测 PluginConfigurable(0%→94.1%)与 RepositoryModule(3.0%→90.9%)后
                 // LINE 65.18%(5231/8025),阈值上调至 0.61(余量 4.2pp)
-                minimum = 0.61
+                // V32 补测编排类(ReaderModeSwitcher 56.8%→82.0%、
+                // NotificationBarModeService 74.9%→79.8%、ChapterNavigator 77.7%→86.0%)
+                // 与 FileBookRepository 缺章自愈(64.3%→70.0%)后 LINE 66.04%(5300/8025),
+                // 阈值上调至 0.62(余量 4.0pp)
+                minimum = 0.62
             }
         }
     }

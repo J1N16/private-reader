@@ -41,6 +41,9 @@
 - `StorageManager` 新增包级 `(Path base, Path legacy)` 构造器注入旧版本目录(既有 `(Path)` 与默认构造器均委托之),使原先内联 `PathManager.getConfigPath()` 而不可测的数据迁移全流程可在 `@TempDir` 下验证;该类覆盖率 44.2%→85.2% | Added a package-level `(Path base, Path legacy)` constructor to `StorageManager` injecting the legacy directory (both the existing `(Path)` and default constructors delegate to it), making the previously untestable data-migration flow (which inlined `PathManager.getConfigPath()`) verifiable under `@TempDir`; class coverage 44.2%→85.2%
 - 补测 `PluginConfigurable`(0%→94.1%)与 `RepositoryModule`(3.0%→90.9%,含「惰性服务解析只查询一次」契约) | Added coverage for `PluginConfigurable` (0%→94.1%) and `RepositoryModule` (3.0%→90.9%, including the "lazy service resolution queries only once" contract)
 - JaCoCo LINE 覆盖率 63.70%→65.18%,回归护栏阈值 0.60→0.61(655 测试全通过) | JaCoCo LINE coverage 63.70%→65.18%, regression gate raised from 0.60 to 0.61 (655 tests passing)
+- 补测三大编排类的未尽分支:`ReaderModeSwitcher` 56.8%→82.0%(将 mock `Application.invokeLater` 改为同步执行后解开工具窗口隐藏/显示路径)、`NotificationBarModeService` 74.9%→79.8%(页码夹紧/无项目守卫/状态清理)、`ChapterNavigator` 77.7%→86.0%(异步数据源末页导航) | Extended coverage of three orchestration classes: `ReaderModeSwitcher` 56.8%→82.0% (making mock `Application.invokeLater` run synchronously unlocked the tool-window hide/show paths), `NotificationBarModeService` 74.9%→79.8% (page clamping / no-project guards / state reset), `ChapterNavigator` 77.7%→86.0% (async last-page navigation)
+- 新增 `FileBookRepositoryChapterFetchTest` 覆盖 details.json 缺章时经 `ChapterService` 重抓并回写文件的自愈路径(类覆盖 64.3%→70.0%) | Added `FileBookRepositoryChapterFetchTest` covering the self-healing path that re-fetches chapters via `ChapterService` and writes them back when details.json lacks them (class coverage 64.3%→70.0%)
+- JaCoCo LINE 覆盖率 65.18%→66.04%,回归护栏阈值 0.61→0.62(678 测试全通过) | JaCoCo LINE coverage 65.18%→66.04%, regression gate raised from 0.61 to 0.62 (678 tests passing)
 
 ## [3.1.0] - 2026-10-10
 

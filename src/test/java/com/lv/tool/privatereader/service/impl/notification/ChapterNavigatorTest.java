@@ -195,6 +195,52 @@ class ChapterNavigatorTest {
         assertEquals(0, host.publishCount);
     }
 
+    // --- V32 补充:异步数据源下的末页导航与展示失败分支 ---
+
+    @Test
+    void navigateToLastPageFallsBackToBookServiceWhenNoCachedChapters() {
+        startReadingAt("c2");
+        book.setCachedChapters(List.of());
+        when(bookService.getChaptersSync("b1")).thenReturn(List.of(
+                new ChapterService.EnhancedChapter("第一章", "c1", "内容一"),
+                new ChapterService.EnhancedChapter("第二章", "c2", "内容二")));
+
+        navigator.navigateToLastPage(project, -1);
+
+        verify(bookService).getChaptersSync("b1");
+        assertEquals("c1", host.getViewState().getChapterId(), "异步数据源应回到上一章");
+        assertEquals(1, host.publishCount);
+    }
+
+    @Test
+    void navigateToLastPageWithEmptyChapterListShowsInfo() {
+        startReadingAt("c1");
+        book.setCachedChapters(List.of());
+        when(bookService.getChaptersSync("b1")).thenReturn(List.of());
+
+        navigator.navigateToLastPage(project, 1);
+
+        assertEquals("导航", host.infoTitle, "空章节列表应提示");
+        assertEquals(0, host.publishCount);
+    }
+
+    @Test
+    void navigateChapterWithUnknownCurrentChapterShowsError() {
+        startReadingAt("c1");
+        // 当前章节不在章节列表中 → findChapterIndex 返回 -1 → 弹错误
+        host.getViewStateRef().set(ReaderViewState.empty().withChapter(book, "ghost", "幽灵章"));
+
+        navigator.navigateChapter(project, 1);
+
+        assertEquals("导航失败", host.errorTitle);
+        assertEquals(0, host.publishCount);
+    }
+
+    // 注:「目标章节内容为空」/「无解析器」/「分页后内容为空」三个分支不可测:
+    //  - 内容为 null 时 RxJava `Single.fromCallable` 返回空即抛 NPE,会走 doOnError 的
+    //    `LOG.error`,而测试环境断言错误日志(不作为用例);
+    //  - 「分页后内容为空」被上游的空内容校验遮蔽,实际不可达(遗留分支)。
+
     // --- 辅助 ---
 
     private void startReadingAt(String chapterId) {
