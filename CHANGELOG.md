@@ -8,10 +8,12 @@
 - 删除无调用方的 Reactive 兼容路径 `NotificationService.showChapterContent(Book, chapterId, content)` 及其失效 import,该服务 923→788 行,无行为变更 | Removed the unused reactive compatibility path `NotificationService.showChapterContent(Book, chapterId, content)` and its stale imports, shrinking the service from 923 to 788 lines, with no behavior change
 - 拆分通知栏阅读进度保存/恢复为独立 `NotificationProgressManager`(窄接口 Host 解耦),该服务 788→741 行,无行为变更 | Extracted notification-bar reading-progress save/restore into a standalone `NotificationProgressManager` (decoupled via a narrow `Host` interface), shrinking the service from 788 to 741 lines, with no behavior change
 - 拆分通知栏章节内容展示流水线为独立 `ChapterContentViewer`(窄接口 Host 解耦),该服务 741→694 行,无行为变更 | Extracted the notification-bar chapter-content display pipeline into a standalone `ChapterContentViewer` (decoupled via a narrow `Host` interface), shrinking the service from 741 to 694 lines, with no behavior change
+- 可测性改造 `NetworkPerformanceMonitor`:构造器改为可注入 `ScheduledExecutorService`(生产默认构造器委托 `AppExecutorUtil`,行为不变),`null` 调度器不注册周期任务,周期参数抽为具名常量,报告任务体放宽为包级可见 | Made `NetworkPerformanceMonitor` testable: the constructor now accepts an injectable `ScheduledExecutorService` (the production default delegates to `AppExecutorUtil`, behavior unchanged), a `null` scheduler skips periodic registration, period values became named constants, and the report task body is now package-visible
 
 ### 质量与维护 | Quality and Maintenance
 - 新增 `ChapterEventProcessorTest` 4 个、`ChapterNavigatorTest` 8 个、`NotificationProgressManagerTest` 7 个、`ChapterContentViewerTest` 3 个回归测试(349 测试全通过) | Added 4 `ChapterEventProcessorTest`, 8 `ChapterNavigatorTest`, 7 `NotificationProgressManagerTest`, and 3 `ChapterContentViewerTest` regression tests (349 tests passing)
-- JaCoCo LINE 覆盖率 39.13%→42.44%,回归护栏阈值 0.30→0.35 | JaCoCo LINE coverage 39.13%→42.44%, regression gate raised from 0.30 to 0.35
+- 新增 `NetworkPerformanceMonitorTest` 11 个(记录/报告/错误聚合/生命周期,该类覆盖 0.8%→93.0%)、`ReactiveChapterCacheRepositoryImplCrudTest` 12 个(缓存读写/过期/容量清理/全量与按书清理,该类覆盖 30.7%→76.5%),共 372 测试全通过 | Added 11 `NetworkPerformanceMonitorTest` cases (recording/reporting/error aggregation/lifecycle; class coverage 0.8%→93.0%) and 12 `ReactiveChapterCacheRepositoryImplCrudTest` cases (cache read/write, expiry, size-based eviction, full and per-book cleanup; class coverage 30.7%→76.5%), 372 tests passing
+- JaCoCo LINE 覆盖率 42.44%→45.88%,回归护栏阈值 0.35→0.40 | JaCoCo LINE coverage 42.44%→45.88%, regression gate raised from 0.35 to 0.40
 
 ## [3.1.0] - 2026-10-10
 

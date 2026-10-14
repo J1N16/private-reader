@@ -75,7 +75,9 @@ jacocoTestCoverageVerification {
                 // 阈值上调至 0.30 作为回归护栏,留有约 3.5 个百分点安全余量
                 // V15 修复缓存清理后 LINE 38.34%;V16 拆分 ChapterEventProcessor 并补测后 LINE 39.95%(3161/7912),
                 // 阈值上调至 0.35 作为回归护栏,留有约 5 个百分点安全余量
-                minimum = 0.35
+                // V21 可测性改造 NetworkPerformanceMonitor + 补测章节缓存仓储 CRUD 后 LINE 45.88%(3628/7907),
+                // 阈值上调至 0.40 作为回归护栏,留有约 5.8 个百分点安全余量
+                minimum = 0.40
             }
         }
     }

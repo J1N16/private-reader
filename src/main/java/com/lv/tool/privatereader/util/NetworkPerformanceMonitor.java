@@ -7,6 +7,7 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.util.concurrency.AppExecutorUtil;
 
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.ScheduledFuture;
@@ -20,6 +21,14 @@ import java.util.concurrent.atomic.AtomicReference;
 @Service(Service.Level.APP)
 public final class NetworkPerformanceMonitor implements Disposable {
     private static final Logger LOG = Logger.getInstance(NetworkPerformanceMonitor.class);
+
+    /** 定期报告首次延迟(分钟)。 */
+    static final long REPORT_INITIAL_DELAY_MINUTES = 5;
+    /** 定期报告间隔(分钟)。 */
+    static final long REPORT_PERIOD_MINUTES = 5;
+
+    /** 调度器由外部注入,便于测试与生命周期管理。 */
+    private final ScheduledExecutorService scheduler;
     
     // 性能指标统计
     private final AtomicLong totalRequests = new AtomicLong(0);
@@ -44,6 +53,16 @@ public final class NetworkPerformanceMonitor implements Disposable {
     private ScheduledFuture<?> reportTask;
 
     public NetworkPerformanceMonitor() {
+        this(AppExecutorUtil.getAppScheduledExecutorService());
+    }
+
+    /**
+     * 供测试注入调度器的构造器(V21 可测性改造)。
+     *
+     * @param scheduler 用于承载定期报告的调度器;传 {@code null} 时不注册周期任务
+     */
+    NetworkPerformanceMonitor(ScheduledExecutorService scheduler) {
+        this.scheduler = scheduler;
         // 启动定期报告
         startPeriodicReporting();
     }
@@ -232,7 +251,10 @@ public final class NetworkPerformanceMonitor implements Disposable {
      * 启动定期报告
      */
     private void startPeriodicReporting() {
-        reportTask = AppExecutorUtil.getAppScheduledExecutorService().scheduleWithFixedDelay(
+        if (scheduler == null) {
+            return;
+        }
+        reportTask = scheduler.scheduleWithFixedDelay(
             () -> {
                 try {
                     logPerformanceReport();
@@ -240,16 +262,16 @@ public final class NetworkPerformanceMonitor implements Disposable {
                     LOG.error("[性能监控] 定期报告时发生错误", e);
                 }
             },
-            5,
-            5,
+            REPORT_INITIAL_DELAY_MINUTES,
+            REPORT_PERIOD_MINUTES,
             TimeUnit.MINUTES
         );
     }
     
     /**
-     * 记录性能报告
+     * 记录性能报告(包级可见,供测试直接触发周期任务体)。
      */
-    private void logPerformanceReport() {
+    void logPerformanceReport() {
         long total = totalRequests.get();
         if (total > 0) {
             LOG.info("[性能监控] " + getSimpleStats());
