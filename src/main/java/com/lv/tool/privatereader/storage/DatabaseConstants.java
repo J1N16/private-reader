@@ -73,6 +73,19 @@ public final class DatabaseConstants {
     }
 
     /**
+     * 从 JDBC URL 推导数据库文件路径(用于目录创建与诊断)。
+     *
+     * @param dbUrl 形如 {@code jdbc:sqlite:/path/to/x.db} 的 URL
+     * @return 对应的文件 Path
+     */
+    @NotNull
+    public static Path pathFromUrl(@NotNull String dbUrl) {
+        String prefix = "jdbc:sqlite:";
+        String filePath = dbUrl.startsWith(prefix) ? dbUrl.substring(prefix.length()) : dbUrl;
+        return Paths.get(filePath);
+    }
+
+    /**
      * Gets the JDBC URL for the shared SQLite database.
      *
      * @return The JDBC URL string.

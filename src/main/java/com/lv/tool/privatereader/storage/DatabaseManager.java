@@ -43,11 +43,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Service(Service.Level.APP)
 public final class DatabaseManager implements Disposable {
     private static final Logger LOG = Logger.getInstance(DatabaseManager.class);
-    private static final AtomicBoolean databaseInitialized = new AtomicBoolean(false);
     private static final String MIGRATION_FLAG_KEY = "private.reader.migration.sqlite.v1.complete";
     private static final String BOOK_DETAILS_FILENAME = "book_details.json";
 
     private final String dbUrl;
+    /** 实例级初始化护栏(APP 级服务通常单实例;改用实例字段便于测试注入不同 dbUrl)。 */
+    private final AtomicBoolean databaseInitialized = new AtomicBoolean(false);
 
     // 静态初始化块：只加载一次驱动
     static {
@@ -101,7 +102,16 @@ public final class DatabaseManager implements Disposable {
             """;
 
     public DatabaseManager() {
-        this.dbUrl = DatabaseConstants.getDatabaseUrl();
+        this(DatabaseConstants.getDatabaseUrl());
+    }
+
+    /**
+     * 包级构造器:允许测试注入独立数据库 URL,避免依赖 IntelliJ 容器与全局静态状态。
+     *
+     * @param dbUrl JDBC URL(例如 {@code jdbc:sqlite:/tmp/x.db})
+     */
+    DatabaseManager(String dbUrl) {
+        this.dbUrl = dbUrl;
         LOG.info("DatabaseManager initialized. DB URL: " + dbUrl);
         ensureDatabaseInitialized();
     }
@@ -141,8 +151,8 @@ public final class DatabaseManager implements Disposable {
         if (databaseInitialized.compareAndSet(false, true)) {
             LOG.info("Performing one-time database initialization...");
             try {
-                // Ensure database directory exists
-                Path dbPath = DatabaseConstants.getDatabasePath();
+                // Ensure database directory exists(由注入的 dbUrl 推导,不再依赖 IntelliJ 容器)
+                Path dbPath = DatabaseConstants.pathFromUrl(dbUrl);
                 Path parentDir = dbPath.getParent();
                 if (parentDir != null && !Files.exists(parentDir)) {
                     Files.createDirectories(parentDir);
@@ -238,15 +248,36 @@ public final class DatabaseManager implements Disposable {
             return;
         }
 
-        LOG.info("Starting one-time migration of reading progress from JSON to SQLite...");
-
-        StorageRepository storageRepository = null;
-        ReadingProgressRepository progressRepository = null;
+        StorageRepository storageRepository;
+        ReadingProgressRepository progressRepository;
         try {
             storageRepository = ApplicationManager.getApplication().getService(StorageRepository.class);
             // Get the specific implementation, likely SqliteReadingProgressRepository
             progressRepository = ApplicationManager.getApplication().getService(ReadingProgressRepository.class);
+        } catch (Exception e) { // Catch errors getting services or listing directories
+            LOG.error("Critical migration error. The process will retry on next startup.", e);
+            return;
+        }
+        runMigrationIfNeeded(propertiesComponent, storageRepository, progressRepository);
+    }
 
+    /**
+     * 核心迁移逻辑(依赖由调用方提供,便于单元测试)。
+     *
+     * <p>从旧的 {@code book_details.json} 读取进度并写入 SQLite;仅当全部成功时
+     * 才写入迁移完成标记,否则下次启动重试。</p>
+     */
+    void runMigrationIfNeeded(PropertiesComponent propertiesComponent,
+                              @Nullable StorageRepository storageRepository,
+                              @Nullable ReadingProgressRepository progressRepository) {
+        if (propertiesComponent.isValueSet(MIGRATION_FLAG_KEY)) {
+            LOG.info("Migration to SQLite already completed. Skipping.");
+            return;
+        }
+
+        LOG.info("Starting one-time migration of reading progress from JSON to SQLite...");
+
+        try {
             if (storageRepository == null || progressRepository == null) {
                 LOG.error("Migration failed: Could not obtain required services (StorageRepository or ReadingProgressRepository).");
                 return;
