@@ -13,7 +13,8 @@
 ```
 docs/solutions/
 ├── README.md              ← 本文件:总索引 / 单一事实源
-├── OPTIMIZATION_V24.md    ← 最新优化轮次(V25 起顺延)
+├── OPTIMIZATION_V25.md    ← 最新优化轮次(V26 起顺延)
+├── OPTIMIZATION_V24.md
 ├── OPTIMIZATION_V23.md
 ├── OPTIMIZATION_V22.md
 ├── OPTIMIZATION_V21.md
@@ -56,6 +57,7 @@ docs/solutions/
 | **V22** | **2026-10-10** | **3.1.1** | **`DatabaseManager` 注入式构造(25.4%→71.2%)、迁移逻辑外提补测、`NetworkUtils` 本地 HTTP 补测(28.4%→39.8%)、阈值 0.40→0.42** | **389** | **46.84%** |
 | **V23** | **2026-10-10** | **3.1.1** | **零覆盖工具类补测:`PrivateReaderConfig` 0→74%、`ReaderModeSwitcher` 0→57%、`StorageManager`/`ExceptionHandler`/`ConfigDiagnosticTool` 均从 0 起步、阈值 0.42→0.45** | **428** | **49.34%** |
 | **V24** | **2026-10-10** | **3.1.1** | **`StorageManager` 注入 basePath 补测路径逻辑(21.3%→44.2%)、`FileBookRepository` 阅读位置恢复/修复补测(51.8%→64.3%)、阈值 0.45→0.46** | **443** | **50.29%** |
+| **V25** | **2026-10-10** | **3.1.1** | **通知展示创建路径补测(`NotificationDisplayManager` 32.8%→100%)、`BookServiceImpl` 增删改补测(40.7%→70.9%)、阈值 0.46→0.47** | **458** | **51.11%** |
 
 ## 三、当前状态(单一事实源)
 
@@ -78,7 +80,8 @@ docs/solutions/
 - **存储可测性改造**:`DatabaseManager` 包级注入 dbUrl 构造器、初始化护栏静态→实例、迁移逻辑外提为包级重载;`DatabaseConstants.pathFromUrl` 纯函数,LINE 45.88%→46.84%
 - **零覆盖工具类补测**:`PrivateReaderConfig`/`ReaderModeSwitcher`/`StorageManager`/`ExceptionHandler`/`ConfigDiagnosticTool` 从 0 起步,LINE 46.84%→49.34%
 - **存储路径可测性改造**:`StorageManager` 包级注入 basePath 构造器;`FileBookRepository` 阅读位置恢复/修复补测,LINE 49.34%→50.29%(突破 50%)
-- **工程化**:JaCoCo 覆盖率护栏(当前 **0.46**,实测 50.29%)+ GitHub Actions CI(构建/测试/打包/`verifyPlugin`)
+- **通知/书籍服务补测**:`NotificationDisplayManager` 展示创建路径补测(→100%)、`BookServiceImpl` 增删改补测,LINE 50.29%→51.11%
+- **工程化**:JaCoCo 覆盖率护栏(当前 **0.47**,实测 51.11%)+ GitHub Actions CI(构建/测试/打包/`verifyPlugin`)
 
 ### 3.2 遗留事项(按文档轮次汇总)
 
@@ -106,6 +109,8 @@ docs/solutions/
 | `StorageManager` 44.2%:剩余为 `clearAllStorage`/`migrateFromOldLocation`(依赖 `PathManager`/容器) | V24 | 低 |
 | `FileBookRepository` 64.3%:剩余为章节网络补充与损坏-恢复重试计数分支 | V24 | 低 |
 | 覆盖率实测 50.29%(V24),阈值已上调至 0.46(余量 4.29pp) | V24 完成 | — |
+| `NotificationDisplayManager` 真实通知路径(V14 遗留)已于 V25 补测至 100% | V25 完成 | — |
+| 覆盖率实测 51.11%(V25),阈值已上调至 0.47(余量 4.11pp) | V25 完成 | — |
 | `verifyPlugin` 本地需联网下载 IDE 263 平台;**CI 的 verify-plugin job 有外网正常执行** | V13 遗留 | 环境 |
 
 ### 3.3 覆盖率阈值历史
@@ -120,20 +125,22 @@ docs/solutions/
 | 0.42 | V22 存储/网络可测性改造补测后(46.84%) | V22 |
 | 0.45 | V23 零覆盖工具类补测后(49.34%) | V23 |
 | 0.46 | V24 存储路径/书籍修复补测后(50.29%) | V24 |
+| 0.47 | V25 通知展示/书籍服务补测后(51.11%) | V25 |
 
 > V15 实测 LINE 达 38.34%;V16 拆分事件处理并补测后达 39.95% 并将阈值上调至 0.35;
 > V17 拆分导航流水线补测后达 41.08%;V18 删死代码后达 41.45%;V19 拆进度逻辑后达 41.89%;V20 拆内容展示后达 42.44%;
 > V21 可测性改造监控器 + 缓存仓储 CRUD 补测后达 45.88%,阈值上调至 0.40;
 > V22 存储/网络可测性改造并补测后达 46.84%,阈值上调至 0.42;
-> V23 零覆盖工具类补测后达 49.34%,阈值上调至 0.45;V24 存储路径/书籍修复补测后达 50.29%,阈值上调至 0.46。
+> V23 零覆盖工具类补测后达 49.34%,阈值上调至 0.45;V24 存储路径/书籍修复补测后达 50.29%,阈值上调至 0.46;
+> V25 通知展示/书籍服务补测后达 51.11%,阈值上调至 0.47。
 
 ## 四、指标演进
 
-| 指标 | V8 | V9 | V10 | V11 | V12 | V13 | V14 | V15 | V16 | V17 | V18 | V19 | V20 | V21 | V22 | V23 | V24 |
-|------|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|
-| LINE | 18.24% | 28.02% | 31.02% | 31.49% | 31.48% | 33.54% | **36.35%** | **38.34%** | **39.95%** | **41.08%** | **41.45%** | **41.89%** | **42.44%** | **45.88%** | **46.84%** | **49.34%** | **50.29%** |
-| 测试数 | 99 | 209 | 236 | 248 | 249 | 270 | **299** | **311** | **331** | **339** | **339** | **346** | **349** | **372** | **389** | **428** | **443** |
-| 总行数 | 7581 | 7581 | 7581 | 7692 | 7692 | 7672 | 7653 | 7653 | 7912 | 7939 | 7867 | 7876 | 7902 | 7907 | 7919 | 7918 | 7920 |
+| 指标 | V8 | V9 | V10 | V11 | V12 | V13 | V14 | V15 | V16 | V17 | V18 | V19 | V20 | V21 | V22 | V23 | V24 | V25 |
+|------|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|
+| LINE | 18.24% | 28.02% | 31.02% | 31.49% | 31.48% | 33.54% | **36.35%** | **38.34%** | **39.95%** | **41.08%** | **41.45%** | **41.89%** | **42.44%** | **45.88%** | **46.84%** | **49.34%** | **50.29%** | **51.11%** |
+| 测试数 | 99 | 209 | 236 | 248 | 249 | 270 | **299** | **311** | **331** | **339** | **339** | **346** | **349** | **372** | **389** | **428** | **443** | **458** |
+| 总行数 | 7581 | 7581 | 7581 | 7692 | 7692 | 7672 | 7653 | 7653 | 7912 | 7939 | 7867 | 7876 | 7902 | 7907 | 7919 | 7918 | 7920 | 7920 |
 
 > 注:总行数为各轮报告的统计口径,代码持续变化,精确值以 JaCoCo 报告为准。
 
@@ -152,6 +159,7 @@ docs/solutions/
 11. **构造函数副作用阻塞可测性**:`NetworkPerformanceMonitor` 构造器直接向 `AppExecutorUtil` 全局调度器注册 5 分钟周期任务,导致每次测试 new 都污染全局定时器、只能靠 dispose 清理。凡「构造即注册全局资源」的服务,应抽出可注入依赖(如 `ScheduledExecutorService`)的包级构造器,生产默认构造器再委托(V21)。
 12. **静态初始化 flag 与全局容器耦合**:`DatabaseManager` 的 `databaseInitialized` 原为静态字段、dbUrl 与目录解析走 IntelliJ 容器,导致无法用不同数据库多次实例化。改为**实例级** flag + 包级注入 dbUrl 构造器 + 由 URL 推导目录后即可独立测试;迁移逻辑内联的 `ApplicationManager.getService`/`PropertiesComponent.getInstance` 也须外提为包级重载(V22)。
 13. **硬编码 user.home 的路径服务**:`StorageManager` 构造器直接 `Path.of(user.home,...)` 并调用 `PathManager`,实例方法全 0 覆盖。抽出 `StorageManager(Path basePath)` 包级构造器、默认构造器委托之,即可在 `@TempDir` 下验证全部路径/目录逻辑(V24)。
+14. **IntelliJ 通知门面的 mock 要点**:`Notifications.Bus` 是**嵌套类**,须 `mockStatic(Notifications.Bus.class)` 而非 `Notifications.class`;`NotificationGroup` 在未插桩环境为 `final`,只可 mockStatic 后由 mock 返回;`Notification.setTitle(...)` 为流式返回 `this`,mock 须用 `Mockito.RETURNS_SELF`,否则后续 `addAction` 会 NPE(V25)。
 
 ## 六、归档流程
 
@@ -171,7 +179,8 @@ sed -i 's|](\./OPTIMIZATION|](../OPTIMIZATION|g' archive/OPTIMIZATION_V{n}.md
 
 | 文档 | 说明 |
 |------|------|
-| `OPTIMIZATION_V24.md` | 最新轮次:StorageManager 注入 basePath + FileBookRepository 修复补测 + 阈值上调 0.46(V24) |
+| `OPTIMIZATION_V25.md` | 最新轮次:通知展示/书籍服务补测 + 阈值上调 0.47(V25) |
+| `OPTIMIZATION_V24.md` | StorageManager 注入 basePath + FileBookRepository 修复补测 + 阈值上调 0.46(V24) |
 | `OPTIMIZATION_V23.md` | 零覆盖工具类与设置聚合补测 + 阈值上调 0.45(V23) |
 | `OPTIMIZATION_V22.md` | DatabaseManager/NetworkUtils 可测性改造 + 阈值上调 0.42(V22) |
 | `OPTIMIZATION_V21.md` | 监控器可测性改造 + 缓存仓储 CRUD 补测 + 阈值上调 0.40(V21) |

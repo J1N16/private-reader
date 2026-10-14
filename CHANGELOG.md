@@ -23,6 +23,8 @@
 - 可测性改造 `StorageManager`:新增包级注入 `basePath` 构造器(默认构造器委托 `user.home`,行为不变) | Made `StorageManager` testable: added a package-level constructor accepting an injected `basePath` (the default constructor delegates to `user.home`, behavior unchanged)
 - 新增 `StorageManagerPathTest` 6 个(目录结构/路径 getter/书籍目录按需创建)与 `FileBookRepositoryRepairTest` 9 个(阅读位置恢复/修复/详情加载),共 443 测试全通过 | Added 6 `StorageManagerPathTest` cases (directory layout/path getters/on-demand book-directory creation) and 9 `FileBookRepositoryRepairTest` cases (reading-position restore/repair/detail loading), 443 tests passing
 - JaCoCo LINE 覆盖率 49.34%→50.29%(突破 50%),回归护栏阈值 0.45→0.46 | JaCoCo LINE coverage 49.34%→50.29% (crossed 50%), regression gate raised from 0.45 to 0.46
+- 新增 `NotificationDisplayManagerDisplayTest` 6 个(展示/加载/错误/信息通知与按钮装配,该类覆盖 32.8%→100%)与 `BookServiceImplMutationTest` 9 个(增删改/进度保存/异常透传,该类覆盖 40.7%→70.9%),共 458 测试全通过 | Added 6 `NotificationDisplayManagerDisplayTest` cases (reading/loading/error/info notifications and button wiring; class coverage 32.8%→100%) and 9 `BookServiceImplMutationTest` cases (mutation/progress-save/exception propagation; class coverage 40.7%→70.9%), 458 tests passing
+- JaCoCo LINE 覆盖率 50.29%→51.11%,回归护栏阈值 0.46→0.47 | JaCoCo LINE coverage 50.29%→51.11%, regression gate raised from 0.46 to 0.47
 
 ## [3.1.0] - 2026-10-10
 

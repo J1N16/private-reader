@@ -83,7 +83,9 @@ jacocoTestCoverageVerification {
                 // ReaderModeSwitcher 后 LINE 49.34%(3907/7918),阈值上调至 0.45(余量 4.3pp)
                 // V24 改造 StorageManager 注入 basePath 补测路径逻辑 + FileBookRepository 阅读位置修复补测后
                 // LINE 50.29%(3983/7920),阈值上调至 0.46(余量 4.3pp)
-                minimum = 0.46
+                // V25 补测 NotificationDisplayManager 展示路径(100%)与 BookServiceImpl 增删改后
+                // LINE 51.11%(4048/7920),阈值上调至 0.47(余量 4.1pp)
+                minimum = 0.47
             }
         }
     }
