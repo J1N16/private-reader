@@ -30,6 +30,9 @@
 - 可测性改造:`ConfigDiagnosticTool` 的 `ApplicationManager` 服务查询抽为可注入的 `DiagnosticsHosts.Host`(生产实现 `ApplicationManagerHost`),该类覆盖率 22.3%→74.0%;新增 `ConfigDiagnosticToolHostTest` 11 个与 `ApplicationManagerHostTest` 11 个 | Testability refactor: extracted `ConfigDiagnosticTool`'s `ApplicationManager` service lookups into injectable `DiagnosticsHosts.Host` (production impl `ApplicationManagerHost`), lifting that class's coverage 22.3%→74.0%; added 11 `ConfigDiagnosticToolHostTest` and 11 `ApplicationManagerHostTest` cases
 - 修复:接线此前声明但未处理的 `IReaderIntent.NavigateChapter` 意图(上一章/下一章),`ReaderViewModelIntentTest` 补 4 个用例 | Fixed: wired up the previously declared-but-unhandled `IReaderIntent.NavigateChapter` intent (previous/next chapter); added 4 `ReaderViewModelIntentTest` cases
 - JaCoCo LINE 覆盖率 51.38%→53.47%,回归护栏阈值 0.48→0.50(501 测试全通过) | JaCoCo LINE coverage 51.38%→53.47%, regression gate raised from 0.48 to 0.50 (501 tests passing)
+- 可测性改造:`FileStorageRepository` 新增包级 `(Path)` 构造器(默认构造器委托),该 0% 覆盖类提升至 81.2%;`ExceptionHandler` 新增 `RecoveryHost` 抽象与注入式恢复重载,24.4%→47.9% | Testability refactor: added a package-level `(Path)` constructor to `FileStorageRepository` (default constructor delegates), lifting that 0%-coverage class to 81.2%; introduced the `RecoveryHost` abstraction and injectable recovery overload in `ExceptionHandler`, 24.4%→47.9%
+- 新增 `FileStorageRepositoryTest` 13 个、`ExceptionHandlerRecoveryTest` 10 个、`NetworkUtilsProbeTest` 11 个,并补测 `SafeHttpRequestExecutor` 性能统计 API 4 个 | Added 13 `FileStorageRepositoryTest`, 10 `ExceptionHandlerRecoveryTest` and 11 `NetworkUtilsProbeTest` cases, plus 4 cases for the `SafeHttpRequestExecutor` performance-stats API
+- JaCoCo LINE 覆盖率 53.47%→55.23%,回归护栏阈值 0.50→0.52(541 测试全通过) | JaCoCo LINE coverage 53.47%→55.23%, regression gate raised from 0.50 to 0.52 (541 tests passing)
 
 ## [3.1.0] - 2026-10-10
 

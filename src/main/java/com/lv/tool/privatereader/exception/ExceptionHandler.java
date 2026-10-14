@@ -11,6 +11,8 @@ import com.lv.tool.privatereader.storage.StorageManager;
 import com.lv.tool.privatereader.util.NetworkUtils;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.schedulers.Schedulers;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.net.ConnectException;
 import java.net.SocketTimeoutException;
@@ -31,6 +33,56 @@ public class ExceptionHandler {
     private static final Logger LOG = Logger.getInstance(ExceptionHandler.class);
     private static final int MAX_RETRIES = 3;
     private static final long RETRY_DELAY_MS = 1000;
+
+    /**
+     * 自动恢复所需的外部环境抽象(V28)。
+     *
+     * <p>把「网络可用性」「存储服务」「通知展示」三处容器/外部依赖收敛为一个可注入接口,
+     * 使恢复分支可在 IntelliJ 容器外确定性测试;生产实现见 {@link #DEFAULT_RECOVERY_HOST}。</p>
+     */
+    interface RecoveryHost {
+        boolean isNetworkAvailable();
+
+        /** 存储根目录路径;服务不可用时返回 {@code null}。 */
+        @Nullable Path storageBasePath();
+
+        /** 缓存目录路径;服务不可用时返回 {@code null}。 */
+        @Nullable Path storageCachePath();
+
+        void showNotification(@Nullable Project project, @NotNull String title, @NotNull String content);
+    }
+
+    /**
+     * 生产环境默认实现:网络用 {@link NetworkUtils}、存储用 {@code StorageManager} 服务、
+     * 通知用 IntelliJ 通知组。行为与拆分前完全一致。
+     */
+    static final RecoveryHost DEFAULT_RECOVERY_HOST = new RecoveryHost() {
+        @Override
+        public boolean isNetworkAvailable() {
+            return NetworkUtils.isNetworkAvailable();
+        }
+
+        @Override
+        public @Nullable Path storageBasePath() {
+            StorageManager storageManager = ApplicationManager.getApplication().getService(StorageManager.class);
+            return storageManager == null ? null : Path.of(storageManager.getBaseStoragePath());
+        }
+
+        @Override
+        public @Nullable Path storageCachePath() {
+            StorageManager storageManager = ApplicationManager.getApplication().getService(StorageManager.class);
+            return storageManager == null ? null : Path.of(storageManager.getCachePath());
+        }
+
+        @Override
+        public void showNotification(@Nullable Project project, @NotNull String title, @NotNull String content) {
+            NotificationGroupManager.getInstance()
+                    .getNotificationGroup(PrivateReaderConfig.NOTIFICATION_GROUP_ID)
+                    .createNotification(content, NotificationType.INFORMATION)
+                    .setTitle(title)
+                    .notify(project);
+        }
+    };
 
     /**
      * 处理异常
@@ -178,70 +230,70 @@ public class ExceptionHandler {
     }
 
     private static void handleRecovery(Project project, PrivateReaderException exception) {
+        handleRecovery(project, exception, DEFAULT_RECOVERY_HOST);
+    }
+
+    /** 处理自动恢复(环境由调用方注入,便于容器外测试)。 */
+    static void handleRecovery(Project project, PrivateReaderException exception, RecoveryHost host) {
         switch (exception.getType()) {
             case NETWORK_ERROR:
             case NETWORK_TIMEOUT:
             case NETWORK_CONNECTION_REFUSED:
-                handleNetworkRecovery(project);
+                handleNetworkRecovery(project, host);
                 break;
             case STORAGE_ERROR:
-                handleStorageRecovery(project);
+                handleStorageRecovery(project, host);
                 break;
             case PARSE_ERROR:
-                handleParseRecovery(project);
+                handleParseRecovery(project, host);
                 break;
         }
     }
 
-    private static void handleNetworkRecovery(Project project) {
-        if (NetworkUtils.isNetworkAvailable()) {
-            showRecoveryNotification(project, "网络连接已恢复", "正在重新加载数据...");
+    private static void handleNetworkRecovery(Project project, RecoveryHost host) {
+        if (host.isNetworkAvailable()) {
+            host.showNotification(project, "网络连接已恢复", "正在重新加载数据...");
         } else {
-            showRecoveryNotification(project, "网络连接不可用", "请检查网络连接后重试");
+            host.showNotification(project, "网络连接不可用", "请检查网络连接后重试");
         }
     }
 
-    private static void handleStorageRecovery(Project project) {
+    private static void handleStorageRecovery(Project project, RecoveryHost host) {
         try {
-            StorageManager storageManager = ApplicationManager.getApplication().getService(StorageManager.class);
-            if (storageManager == null) {
-                showRecoveryNotification(project, "存储错误", "存储服务不可用，请重启IDE后重试");
+            Path basePath = host.storageBasePath();
+            if (basePath == null) {
+                host.showNotification(project, "存储错误", "存储服务不可用,请重启IDE后重试");
                 return;
             }
 
             // 检查存储根目录是否可写
-            Path basePath = Path.of(storageManager.getBaseStoragePath());
             if (!Files.isWritable(basePath)) {
-                showRecoveryNotification(project, "存储错误", "存储目录不可写，请检查磁盘空间和权限: " + basePath);
+                host.showNotification(project, "存储错误", "存储目录不可写,请检查磁盘空间和权限: " + basePath);
                 return;
             }
 
-            // 确保缓存目录存在，清理可能损坏的过期缓存
-            Path cachePath = Path.of(storageManager.getCachePath());
-            if (!Files.exists(cachePath)) {
+            // 确保缓存目录存在,清理可能损坏的过期缓存
+            Path cachePath = host.storageCachePath();
+            if (cachePath != null && !Files.exists(cachePath)) {
                 Files.createDirectories(cachePath);
-                LOG.info("存储恢复：重建缓存目录 " + cachePath);
+                LOG.info("存储恢复:重建缓存目录 " + cachePath);
             }
 
-            showRecoveryNotification(project, "存储已恢复", "存储目录检查通过，请重试操作");
+            host.showNotification(project, "存储已恢复", "存储目录检查通过,请重试操作");
         } catch (Exception e) {
             LOG.warn("存储恢复失败: " + e.getMessage(), e);
-            showRecoveryNotification(project, "存储错误", "自动恢复失败，请检查磁盘空间和权限");
+            host.showNotification(project, "存储错误", "自动恢复失败,请检查磁盘空间和权限");
         }
     }
 
-    private static void handleParseRecovery(Project project) {
-        // 解析失败多为网页结构变更或编码问题，无安全可靠的自动修复方案。
-        // 如实提示用户，避免"正在修复"的虚假承诺。
-        showRecoveryNotification(project, "解析错误", "章节解析失败，可能是网页结构变更或编码问题。请稍后重试，或刷新章节列表 / 切换书源");
+    private static void handleParseRecovery(Project project, RecoveryHost host) {
+        // 解析失败多为网页结构变更或编码问题,无安全可靠的自动修复方案。
+        // 如实提示用户,避免"正在修复"的虚假承诺。
+        host.showNotification(project, "解析错误", "章节解析失败,可能是网页结构变更或编码问题。请稍后重试,或刷新章节列表 / 切换书源");
     }
 
     private static void showRecoveryNotification(Project project, String title, String content) {
-        NotificationGroupManager.getInstance()
-                .getNotificationGroup(PrivateReaderConfig.NOTIFICATION_GROUP_ID)
-                .createNotification(content, NotificationType.INFORMATION)
-                .setTitle(title)
-                .notify(project);
+        DEFAULT_RECOVERY_HOST.showNotification(project, title, content);
     }
 
     static String getErrorMessage(PrivateReaderException exception) {

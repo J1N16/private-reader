@@ -31,15 +31,27 @@ public final class FileStorageRepository implements StorageRepository {
     private final Path backupPath;
     
     public FileStorageRepository() {
-        LOG.info("初始化应用级别的 FileStorageRepository");
-        
-        // 使用用户主目录下的.private-reader目录作为基础存储路径
-        this.baseStoragePath = Path.of(System.getProperty("user.home"), ".private-reader");
+        this(Path.of(System.getProperty("user.home"), ".private-reader"));
+    }
+
+    /**
+     * 包级构造函数:基础路径由调用方注入(V28)。
+     *
+     * <p>默认构造函数委托到此实现以保持生产行为不变;测试可在 {@code @TempDir} 下
+     * 完全隔离地验证目录结构、文件名净化与清理逻辑,而不再触碰真实的
+     * {@code ~/.private-reader}。</p>
+     *
+     * @param baseStoragePath 基础存储路径(应用级根目录)
+     */
+    FileStorageRepository(@NotNull Path baseStoragePath) {
+        LOG.info("初始化 FileStorageRepository,根目录: " + baseStoragePath);
+
+        this.baseStoragePath = baseStoragePath;
         this.booksPath = baseStoragePath.resolve("books");
         this.cachePath = baseStoragePath.resolve("cache");
         this.settingsPath = baseStoragePath.resolve("settings");
         this.backupPath = baseStoragePath.resolve("backup");
-        
+
         // 创建存储目录结构
         createStorageDirectories();
     }

@@ -89,7 +89,10 @@ jacocoTestCoverageVerification {
                 // 阈值上调至 0.48(余量 3.4pp)
                 // V27 把 ConfigDiagnosticTool 的服务查询抽为 DiagnosticsHosts.Host 并补测,
                 // 同时接线 NavigateChapter 意图后 LINE 53.47%(4283/8010),阈值上调至 0.50(余量 3.5pp)
-                minimum = 0.50
+                // V28 为 FileStorageRepository 注入基础路径、为 ExceptionHandler 注入恢复宿主,
+                // 并补测 SafeHttpRequestExecutor 统计与 NetworkUtils 探测后 LINE 55.23%(4430/8021),
+                // 阈值上调至 0.52(余量 3.2pp)
+                minimum = 0.52
             }
         }
     }

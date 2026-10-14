@@ -148,7 +148,7 @@ class SafeHttpRequestExecutorTest {
 
     @Test
     void executeGetRequestSucceedsAfterSingleRetry() throws IOException {
-        failUntilCount = 1; // 第一次 500，第二次 200
+        failUntilCount = 1; // 第一次 500,第二次 200
 
         try (MockedStatic<NetworkPerformanceMonitor> monitors = mockStatic(NetworkPerformanceMonitor.class)) {
             monitors.when(NetworkPerformanceMonitor::getInstance).thenReturn(mockMonitor());
@@ -158,5 +158,66 @@ class SafeHttpRequestExecutorTest {
             assertEquals("请求内容", result);
             assertEquals(2, requestCount.get());
         }
+    }
+
+    // --- 性能统计 API(V28) ---
+
+    @Test
+    void performanceStatsReportNoRequestsAfterReset() {
+        SafeHttpRequestExecutor.resetPerformanceStats();
+
+        assertEquals("暂无请求统计", SafeHttpRequestExecutor.getPerformanceStats());
+    }
+
+    @Test
+    void performanceStatsCountSuccessfulRequest() throws IOException {
+        SafeHttpRequestExecutor.resetPerformanceStats();
+
+        try (MockedStatic<NetworkPerformanceMonitor> monitors = mockStatic(NetworkPerformanceMonitor.class)) {
+            monitors.when(NetworkPerformanceMonitor::getInstance).thenReturn(mockMonitor());
+
+            SafeHttpRequestExecutor.executeGetRequest(baseUrl + "/book", 0, 0);
+        }
+
+        String stats = SafeHttpRequestExecutor.getPerformanceStats();
+        assertTrue(stats.startsWith("总请求: 1"), stats);
+        assertTrue(stats.contains("成功: 1 (100.0%)"), stats);
+        assertTrue(stats.contains("失败: 0"), stats);
+
+        // 清理全局计数,避免污染其他用例
+        SafeHttpRequestExecutor.resetPerformanceStats();
+    }
+
+    @Test
+    void performanceStatsCountFailedRequest() throws IOException {
+        failUntilCount = Integer.MAX_VALUE;
+        SafeHttpRequestExecutor.resetPerformanceStats();
+
+        try (MockedStatic<NetworkPerformanceMonitor> monitors = mockStatic(NetworkPerformanceMonitor.class)) {
+            monitors.when(NetworkPerformanceMonitor::getInstance).thenReturn(mockMonitor());
+
+            assertThrows(IOException.class,
+                    () -> SafeHttpRequestExecutor.executeGetRequest(baseUrl + "/book", 0, 0));
+        }
+
+        String stats = SafeHttpRequestExecutor.getPerformanceStats();
+        assertTrue(stats.startsWith("总请求: 1"), stats);
+        assertTrue(stats.contains("成功: 0 (0.0%)"), stats);
+        assertTrue(stats.contains("失败: 1"), stats);
+
+        SafeHttpRequestExecutor.resetPerformanceStats();
+    }
+
+    @Test
+    void resetPerformanceStatsClearsAccumulatedCounters() throws IOException {
+        try (MockedStatic<NetworkPerformanceMonitor> monitors = mockStatic(NetworkPerformanceMonitor.class)) {
+            monitors.when(NetworkPerformanceMonitor::getInstance).thenReturn(mockMonitor());
+
+            SafeHttpRequestExecutor.executeGetRequest(baseUrl + "/book", 0, 0);
+        }
+
+        SafeHttpRequestExecutor.resetPerformanceStats();
+
+        assertEquals("暂无请求统计", SafeHttpRequestExecutor.getPerformanceStats());
     }
 }
