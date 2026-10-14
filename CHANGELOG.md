@@ -17,6 +17,9 @@
 - JaCoCo LINE 覆盖率 42.44%→45.88%,回归护栏阈值 0.35→0.40 | JaCoCo LINE coverage 42.44%→45.88%, regression gate raised from 0.35 to 0.40
 - 新增 `DatabaseManagerCoreTest` 8 个(注入 URL 建库/连接/迁移)、`DatabaseConstantsTest` 2 个、`NetworkUtilsHttpTest` 7 个(本地 `HttpServer` 覆盖 2xx/3xx/4xx/5xx 与 `checkNetworkSpeed`),共 389 测试全通过 | Added 8 `DatabaseManagerCoreTest` cases (injected-URL init/connection/migration), 2 `DatabaseConstantsTest` cases, and 7 `NetworkUtilsHttpTest` cases (local `HttpServer` covering 2xx/3xx/4xx/5xx and `checkNetworkSpeed`), 389 tests passing
 - JaCoCo LINE 覆盖率 45.88%→46.84%,回归护栏阈值 0.40→0.42 | JaCoCo LINE coverage 45.88%→46.84%, regression gate raised from 0.40 to 0.42
+- 将 `ExceptionHandler` 的类型推断/标题/文案纯函数与 `ConfigDiagnosticTool` 的目录诊断放宽为可注入的包级入口(行为不变) | Relaxed `ExceptionHandler`'s type-inference/title/message pure functions and `ConfigDiagnosticTool`'s directory diagnostics into injectable package-level entry points (behavior unchanged)
+- 新增 `PrivateReaderConfigTest` 3 个、`StorageManagerTest` 10 个、`ExceptionHandlerTest` 12 个、`ConfigDiagnosticToolTest` 6 个、`ReaderModeSwitcherTest` 7 个,共 428 测试全通过 | Added 3 `PrivateReaderConfigTest`, 10 `StorageManagerTest`, 12 `ExceptionHandlerTest`, 6 `ConfigDiagnosticToolTest`, and 7 `ReaderModeSwitcherTest` cases, 428 tests passing
+- JaCoCo LINE 覆盖率 46.84%→49.34%,回归护栏阈值 0.42→0.45 | JaCoCo LINE coverage 46.84%→49.34%, regression gate raised from 0.42 to 0.45
 
 ## [3.1.0] - 2026-10-10
 

@@ -24,6 +24,11 @@ import java.util.Map;
 public class ConfigDiagnosticTool {
     private static final Logger LOG = Logger.getInstance(ConfigDiagnosticTool.class);
 
+    /** 配置目录:~/.private-reader/settings */
+    static Path configDir() {
+        return Paths.get(System.getProperty("user.home"), ".private-reader", "settings");
+    }
+
     /**
      * 运行诊断
      *
@@ -56,10 +61,14 @@ public class ConfigDiagnosticTool {
      * @param result 诊断结果
      */
     private static void checkConfigDirectory(Map<String, Object> result) {
-        try {
-            String userHome = System.getProperty("user.home");
-            Path configDir = Paths.get(userHome, ".private-reader", "settings");
+        checkConfigDirectory(result, configDir());
+    }
 
+    /**
+     * 检查配置目录并回填诊断结果(包级可见,目录由调用方提供,便于测试)。
+     */
+    static void checkConfigDirectory(Map<String, Object> result, Path configDir) {
+        try {
             boolean dirExists = Files.exists(configDir);
             boolean dirReadable = Files.isReadable(configDir);
             boolean dirWritable = Files.isWritable(configDir);
@@ -71,7 +80,7 @@ public class ConfigDiagnosticTool {
 
             LOG.debug("配置目录诊断: 存在=" + dirExists + ", 可读=" + dirReadable + ", 可写=" + dirWritable + ", 路径=" + configDir);
 
-            // 如果目录不存在，尝试创建
+            // 如果目录不存在,尝试创建
             if (!dirExists) {
                 try {
                     Files.createDirectories(configDir);
@@ -95,10 +104,14 @@ public class ConfigDiagnosticTool {
      * @param result 诊断结果
      */
     private static void checkConfigFiles(Map<String, Object> result) {
-        try {
-            String userHome = System.getProperty("user.home");
-            Path configDir = Paths.get(userHome, ".private-reader", "settings");
+        checkConfigFiles(result, configDir());
+    }
 
+    /**
+     * 检查各配置文件存在/可读/可写/大小(包级可见,目录由调用方提供,便于测试)。
+     */
+    static void checkConfigFiles(Map<String, Object> result, Path configDir) {
+        try {
             // 检查各个配置文件
             checkConfigFile(result, configDir, "PluginSettings.json");
             checkConfigFile(result, configDir, "ReaderSettings.json");
@@ -233,29 +246,27 @@ public class ConfigDiagnosticTool {
      * @return 是否成功重置
      */
     public static boolean resetAllConfigs() {
-        try {
-            String userHome = System.getProperty("user.home");
-            Path configDir = Paths.get(userHome, ".private-reader", "settings");
-
-            // 如果目录存在，删除所有配置文件
-            if (Files.exists(configDir)) {
-                // 删除各个配置文件
-                deleteConfigFile(configDir, "PluginSettings.json");
-                deleteConfigFile(configDir, "ReaderSettings.json");
-                deleteConfigFile(configDir, "CacheSettings.json");
-                deleteConfigFile(configDir, "NotificationReaderSettings.json");
-                deleteConfigFile(configDir, "ReaderModeSettings.json");
-
-                LOG.debug("已重置所有配置文件");
-                return true;
-            } else {
-                LOG.warn("配置目录不存在，无需重置");
-                return false;
-            }
-        } catch (Exception e) {
-            LOG.error("重置配置时出错: " + e.getMessage(), e);
+        Path dir = configDir();
+        // 如果目录存在,删除所有配置文件
+        if (Files.exists(dir)) {
+            resetConfigs(dir);
+            LOG.debug("已重置所有配置文件");
+            return true;
+        } else {
+            LOG.warn("配置目录不存在,无需重置");
             return false;
         }
+    }
+
+    /**
+     * 删除配置目录下的所有已知配置文件(包级可见,目录由调用方提供,便于测试)。
+     */
+    static void resetConfigs(Path configDir) {
+        deleteConfigFile(configDir, "PluginSettings.json");
+        deleteConfigFile(configDir, "ReaderSettings.json");
+        deleteConfigFile(configDir, "CacheSettings.json");
+        deleteConfigFile(configDir, "NotificationReaderSettings.json");
+        deleteConfigFile(configDir, "ReaderModeSettings.json");
     }
 
     /**

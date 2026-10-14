@@ -159,7 +159,10 @@ public class ExceptionHandler {
         return new PrivateReaderException(message, exception, type);
     }
 
-    private static PrivateReaderException.ExceptionType determineExceptionType(Throwable exception) {
+    /**
+     * 根据异常类型推断统一的 ExceptionType(包级可见供测试)。
+     */
+    static PrivateReaderException.ExceptionType determineExceptionType(Throwable exception) {
         if (exception instanceof SocketTimeoutException) {
             return PrivateReaderException.ExceptionType.NETWORK_TIMEOUT;
         } else if (exception instanceof ConnectException) {
@@ -241,7 +244,7 @@ public class ExceptionHandler {
                 .notify(project);
     }
 
-    private static String getErrorMessage(PrivateReaderException exception) {
+    static String getErrorMessage(PrivateReaderException exception) {
         String baseMessage = exception.getMessage();
         switch (exception.getType()) {
             case NETWORK_ERROR:
@@ -261,7 +264,7 @@ public class ExceptionHandler {
         }
     }
 
-    private static String getErrorTitle(PrivateReaderException.ExceptionType type) {
+    static String getErrorTitle(PrivateReaderException.ExceptionType type) {
         switch (type) {
             case NETWORK_ERROR:
             case NETWORK_TIMEOUT:

@@ -79,7 +79,9 @@ jacocoTestCoverageVerification {
                 // 阈值上调至 0.40 作为回归护栏,留有约 5.8 个百分点安全余量
                 // V22 改造 DatabaseManager/NetworkUtils 可测性并补测后 LINE 46.84%(3709/7919),
                 // 阈值上调至 0.42 作为回归护栏,留有约 4.8 个百分点安全余量
-                minimum = 0.42
+                // V23 补测 StorageManager/ExceptionHandler/ConfigDiagnosticTool/PrivateReaderConfig/
+                // ReaderModeSwitcher 后 LINE 49.34%(3907/7918),阈值上调至 0.45(余量 4.3pp)
+                minimum = 0.45
             }
         }
     }
