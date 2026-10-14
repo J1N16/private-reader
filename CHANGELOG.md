@@ -20,6 +20,9 @@
 - 将 `ExceptionHandler` 的类型推断/标题/文案纯函数与 `ConfigDiagnosticTool` 的目录诊断放宽为可注入的包级入口(行为不变) | Relaxed `ExceptionHandler`'s type-inference/title/message pure functions and `ConfigDiagnosticTool`'s directory diagnostics into injectable package-level entry points (behavior unchanged)
 - 新增 `PrivateReaderConfigTest` 3 个、`StorageManagerTest` 10 个、`ExceptionHandlerTest` 12 个、`ConfigDiagnosticToolTest` 6 个、`ReaderModeSwitcherTest` 7 个,共 428 测试全通过 | Added 3 `PrivateReaderConfigTest`, 10 `StorageManagerTest`, 12 `ExceptionHandlerTest`, 6 `ConfigDiagnosticToolTest`, and 7 `ReaderModeSwitcherTest` cases, 428 tests passing
 - JaCoCo LINE 覆盖率 46.84%→49.34%,回归护栏阈值 0.42→0.45 | JaCoCo LINE coverage 46.84%→49.34%, regression gate raised from 0.42 to 0.45
+- 可测性改造 `StorageManager`:新增包级注入 `basePath` 构造器(默认构造器委托 `user.home`,行为不变) | Made `StorageManager` testable: added a package-level constructor accepting an injected `basePath` (the default constructor delegates to `user.home`, behavior unchanged)
+- 新增 `StorageManagerPathTest` 6 个(目录结构/路径 getter/书籍目录按需创建)与 `FileBookRepositoryRepairTest` 9 个(阅读位置恢复/修复/详情加载),共 443 测试全通过 | Added 6 `StorageManagerPathTest` cases (directory layout/path getters/on-demand book-directory creation) and 9 `FileBookRepositoryRepairTest` cases (reading-position restore/repair/detail loading), 443 tests passing
+- JaCoCo LINE 覆盖率 49.34%→50.29%(突破 50%),回归护栏阈值 0.45→0.46 | JaCoCo LINE coverage 49.34%→50.29% (crossed 50%), regression gate raised from 0.45 to 0.46
 
 ## [3.1.0] - 2026-10-10
 

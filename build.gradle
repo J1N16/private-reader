@@ -81,7 +81,9 @@ jacocoTestCoverageVerification {
                 // 阈值上调至 0.42 作为回归护栏,留有约 4.8 个百分点安全余量
                 // V23 补测 StorageManager/ExceptionHandler/ConfigDiagnosticTool/PrivateReaderConfig/
                 // ReaderModeSwitcher 后 LINE 49.34%(3907/7918),阈值上调至 0.45(余量 4.3pp)
-                minimum = 0.45
+                // V24 改造 StorageManager 注入 basePath 补测路径逻辑 + FileBookRepository 阅读位置修复补测后
+                // LINE 50.29%(3983/7920),阈值上调至 0.46(余量 4.3pp)
+                minimum = 0.46
             }
         }
     }

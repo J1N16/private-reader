@@ -42,21 +42,25 @@ public final class StorageManager {
     private final Path backupPath;
     
     public StorageManager() {
-        LOG.info("初始化应用级别的 StorageManager");
-        
-        // 使用用户主目录下的.private-reader目录作为基础存储路径
-        this.baseStoragePath = Path.of(System.getProperty("user.home"), ".private-reader");
+        this(Path.of(System.getProperty("user.home"), ".private-reader"));
+    }
+
+    /**
+     * 包级构造器:允许测试注入独立基础目录,避免依赖用户主目录(V24 可测性改造)。
+     *
+     * @param baseStoragePath 基础存储目录
+     */
+    StorageManager(Path baseStoragePath) {
+        LOG.info("初始化 StorageManager,基础目录: " + baseStoragePath);
+
+        this.baseStoragePath = baseStoragePath;
         this.booksPath = baseStoragePath.resolve("books");
         this.cachePath = baseStoragePath.resolve("cache");
         this.settingsPath = baseStoragePath.resolve("settings");
         this.backupPath = baseStoragePath.resolve("backup");
-        
+
         // 创建存储目录结构
         createStorageDirectories();
-        
-        // 不再在构造函数中执行耗时迁移
-        // migrateFromOldLocation();
-        // migrateSettings();
     }
     
     /**
