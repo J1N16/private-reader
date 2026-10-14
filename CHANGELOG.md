@@ -25,6 +25,8 @@
 - JaCoCo LINE 覆盖率 49.34%→50.29%(突破 50%),回归护栏阈值 0.45→0.46 | JaCoCo LINE coverage 49.34%→50.29% (crossed 50%), regression gate raised from 0.45 to 0.46
 - 新增 `NotificationDisplayManagerDisplayTest` 6 个(展示/加载/错误/信息通知与按钮装配,该类覆盖 32.8%→100%)与 `BookServiceImplMutationTest` 9 个(增删改/进度保存/异常透传,该类覆盖 40.7%→70.9%),共 458 测试全通过 | Added 6 `NotificationDisplayManagerDisplayTest` cases (reading/loading/error/info notifications and button wiring; class coverage 32.8%→100%) and 9 `BookServiceImplMutationTest` cases (mutation/progress-save/exception propagation; class coverage 40.7%→70.9%), 458 tests passing
 - JaCoCo LINE 覆盖率 50.29%→51.11%,回归护栏阈值 0.46→0.47 | JaCoCo LINE coverage 50.29%→51.11%, regression gate raised from 0.46 to 0.47
+- 新增 `ReaderViewModelIntentTest` 4 个(SelectBook/SearchBook 意图,该类覆盖 63.5%→68.4%)、`BookIndexStoreTest` 6 个与 `BookDetailsIoTest` 6 个(索引/详情文件 IO 直测),共 474 测试全通过 | Added 4 `ReaderViewModelIntentTest` cases (SelectBook/SearchBook intents; class coverage 63.5%→68.4%), plus 6 `BookIndexStoreTest` and 6 `BookDetailsIoTest` cases (direct index/details file IO), 474 tests passing
+- JaCoCo LINE 覆盖率 51.11%→51.38%,回归护栏阈值 0.47→0.48 | JaCoCo LINE coverage 51.11%→51.38%, regression gate raised from 0.47 to 0.48
 
 ## [3.1.0] - 2026-10-10
 

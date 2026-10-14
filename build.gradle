@@ -85,7 +85,9 @@ jacocoTestCoverageVerification {
                 // LINE 50.29%(3983/7920),阈值上调至 0.46(余量 4.3pp)
                 // V25 补测 NotificationDisplayManager 展示路径(100%)与 BookServiceImpl 增删改后
                 // LINE 51.11%(4048/7920),阈值上调至 0.47(余量 4.1pp)
-                minimum = 0.47
+                // V26 补测 ReaderViewModel 意图分发/搜索与书籍 IO 辅助类后 LINE 51.38%(4069/7920),
+                // 阈值上调至 0.48(余量 3.4pp)
+                minimum = 0.48
             }
         }
     }
