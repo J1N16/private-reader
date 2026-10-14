@@ -33,6 +33,8 @@
 - 可测性改造:`FileStorageRepository` 新增包级 `(Path)` 构造器(默认构造器委托),该 0% 覆盖类提升至 81.2%;`ExceptionHandler` 新增 `RecoveryHost` 抽象与注入式恢复重载,24.4%→47.9% | Testability refactor: added a package-level `(Path)` constructor to `FileStorageRepository` (default constructor delegates), lifting that 0%-coverage class to 81.2%; introduced the `RecoveryHost` abstraction and injectable recovery overload in `ExceptionHandler`, 24.4%→47.9%
 - 新增 `FileStorageRepositoryTest` 13 个、`ExceptionHandlerRecoveryTest` 10 个、`NetworkUtilsProbeTest` 11 个,并补测 `SafeHttpRequestExecutor` 性能统计 API 4 个 | Added 13 `FileStorageRepositoryTest`, 10 `ExceptionHandlerRecoveryTest` and 11 `NetworkUtilsProbeTest` cases, plus 4 cases for the `SafeHttpRequestExecutor` performance-stats API
 - JaCoCo LINE 覆盖率 53.47%→55.23%,回归护栏阈值 0.50→0.52(541 测试全通过) | JaCoCo LINE coverage 53.47%→55.23%, regression gate raised from 0.50 to 0.52 (541 tests passing)
+- 突破 UI 类零覆盖:确认 headless JUnit 环境下 Swing 与 IntelliJ UI 组件可实例化,由此补测三个设置面板 —— `NotificationReaderConfigurable` 0%→100%、`ReaderConfigurable` 0%→89.4%、`CacheConfigurable` 0%→54.3%,共新增 29 个测试 | Broke the zero-coverage barrier for UI classes: verified that Swing and IntelliJ UI components are instantiable in a headless JUnit environment, then covered three settings panels — `NotificationReaderConfigurable` 0%→100%, `ReaderConfigurable` 0%→89.4%, `CacheConfigurable` 0%→54.3%, adding 29 tests
+- JaCoCo LINE 覆盖率 55.23%→59.53%,回归护栏阈值 0.52→0.56(571 测试全通过) | JaCoCo LINE coverage 55.23%→59.53%, regression gate raised from 0.52 to 0.56 (571 tests passing)
 
 ## [3.1.0] - 2026-10-10
 

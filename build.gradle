@@ -92,7 +92,10 @@ jacocoTestCoverageVerification {
                 // V28 为 FileStorageRepository 注入基础路径、为 ExceptionHandler 注入恢复宿主,
                 // 并补测 SafeHttpRequestExecutor 统计与 NetworkUtils 探测后 LINE 55.23%(4430/8021),
                 // 阈值上调至 0.52(余量 3.2pp)
-                minimum = 0.52
+                // V29 确认 headless 下 Swing/IntelliJ UI 组件可实例化,补测三个设置面板
+                // (NotificationReaderConfigurable 100%/ReaderConfigurable 89.4%/CacheConfigurable 54.3%)
+                // 后 LINE 59.53%(4775/8021),阈值上调至 0.56(余量 3.5pp)
+                minimum = 0.56
             }
         }
     }
