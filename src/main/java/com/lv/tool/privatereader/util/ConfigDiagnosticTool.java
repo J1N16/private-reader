@@ -1,17 +1,12 @@
 package com.lv.tool.privatereader.util;
 
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
-import com.lv.tool.privatereader.service.NotificationService;
-import com.lv.tool.privatereader.service.ReaderModeSwitcher;
-import com.lv.tool.privatereader.settings.*;
+import com.lv.tool.privatereader.settings.ApplicationManagerHost;
+import com.lv.tool.privatereader.settings.DiagnosticsHosts;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import com.intellij.openapi.project.Project;
-import com.intellij.openapi.project.ProjectManager;
-
 import java.util.HashMap;
 import java.util.Map;
 
@@ -35,6 +30,16 @@ public class ConfigDiagnosticTool {
      * @return 诊断结果
      */
     public static Map<String, Object> runDiagnostic() {
+        return runDiagnostic(new ApplicationManagerHost());
+    }
+
+    /**
+     * 运行诊断(环境查询由调用方注入,便于 IntelliJ 容器外测试)。
+     *
+     * @param host 环境查询宿主
+     * @return 诊断结果
+     */
+    static Map<String, Object> runDiagnostic(DiagnosticsHosts.Host host) {
         Map<String, Object> result = new HashMap<>();
 
         // 检查配置目录
@@ -44,13 +49,13 @@ public class ConfigDiagnosticTool {
         checkConfigFiles(result);
 
         // 检查配置值
-        checkConfigValues(result);
+        checkConfigValues(result, host);
 
         // 检查阅读模式
-        checkReaderMode(result);
+        checkReaderMode(result, host);
 
         // 检查通知栏模式
-        checkNotificationMode(result);
+        checkNotificationMode(result, host);
 
         return result;
     }
@@ -166,17 +171,17 @@ public class ConfigDiagnosticTool {
      *
      * @param result 诊断结果
      */
-    private static void checkConfigValues(Map<String, Object> result) {
+    static void checkConfigValues(Map<String, Object> result, DiagnosticsHosts.Host host) {
         try {
             // 检查插件设置
-            PluginSettings pluginSettings = ApplicationManager.getApplication().getService(PluginSettings.class);
+            DiagnosticsHosts.PluginSettingsHost pluginSettings = host.pluginSettings();
             if (pluginSettings != null) {
                 Map<String, Object> pluginSettingsValues = new HashMap<>();
-                pluginSettingsValues.put("enabled", pluginSettings.isEnabled());
-                pluginSettingsValues.put("autoUpdate", pluginSettings.isAutoUpdate());
-                pluginSettingsValues.put("showNotifications", pluginSettings.isShowNotifications());
-                pluginSettingsValues.put("language", pluginSettings.getLanguage());
-                pluginSettingsValues.put("debugMode", pluginSettings.isDebugMode());
+                pluginSettingsValues.put("enabled", pluginSettings.enabled());
+                pluginSettingsValues.put("autoUpdate", pluginSettings.autoUpdate());
+                pluginSettingsValues.put("showNotifications", pluginSettings.showNotifications());
+                pluginSettingsValues.put("language", pluginSettings.language());
+                pluginSettingsValues.put("debugMode", pluginSettings.debugMode());
 
                 result.put("pluginSettings", pluginSettingsValues);
                 LOG.debug("插件设置值: " + pluginSettingsValues);
@@ -186,14 +191,14 @@ public class ConfigDiagnosticTool {
             }
 
             // 检查阅读器设置
-            ReaderSettings readerSettings = ApplicationManager.getApplication().getService(ReaderSettings.class);
+            DiagnosticsHosts.ReaderSettingsHost readerSettings = host.readerSettings();
             if (readerSettings != null) {
                 Map<String, Object> readerSettingsValues = new HashMap<>();
-                readerSettingsValues.put("fontFamily", readerSettings.getFontFamily());
-                readerSettingsValues.put("fontSize", readerSettings.getFontSize());
-                readerSettingsValues.put("bold", readerSettings.isBold());
-                readerSettingsValues.put("darkTheme", readerSettings.isDarkTheme());
-                readerSettingsValues.put("useAnimation", readerSettings.isUseAnimation());
+                readerSettingsValues.put("fontFamily", readerSettings.fontFamily());
+                readerSettingsValues.put("fontSize", readerSettings.fontSize());
+                readerSettingsValues.put("bold", readerSettings.bold());
+                readerSettingsValues.put("darkTheme", readerSettings.darkTheme());
+                readerSettingsValues.put("useAnimation", readerSettings.useAnimation());
 
                 result.put("readerSettings", readerSettingsValues);
                 LOG.debug("阅读器设置值: " + readerSettingsValues);
@@ -203,14 +208,14 @@ public class ConfigDiagnosticTool {
             }
 
             // 检查缓存设置
-            CacheSettings cacheSettings = ApplicationManager.getApplication().getService(CacheSettings.class);
+            DiagnosticsHosts.CacheSettingsHost cacheSettings = host.cacheSettings();
             if (cacheSettings != null) {
                 Map<String, Object> cacheSettingsValues = new HashMap<>();
-                cacheSettingsValues.put("enableCache", cacheSettings.isEnableCache());
-                cacheSettingsValues.put("maxCacheSize", cacheSettings.getMaxCacheSize());
-                cacheSettingsValues.put("maxCacheAge", cacheSettings.getMaxCacheAge());
-                cacheSettingsValues.put("enablePreload", cacheSettings.isEnablePreload());
-                cacheSettingsValues.put("preloadCount", cacheSettings.getPreloadCount());
+                cacheSettingsValues.put("enableCache", cacheSettings.enableCache());
+                cacheSettingsValues.put("maxCacheSize", cacheSettings.maxCacheSize());
+                cacheSettingsValues.put("maxCacheAge", cacheSettings.maxCacheAge());
+                cacheSettingsValues.put("enablePreload", cacheSettings.enablePreload());
+                cacheSettingsValues.put("preloadCount", cacheSettings.preloadCount());
 
                 result.put("cacheSettings", cacheSettingsValues);
                 LOG.debug("缓存设置值: " + cacheSettingsValues);
@@ -220,13 +225,13 @@ public class ConfigDiagnosticTool {
             }
 
             // 检查阅读模式设置
-            ReaderModeSettings modeSettings = ApplicationManager.getApplication().getService(ReaderModeSettings.class);
+            DiagnosticsHosts.ReaderModeSettingsHost modeSettings = host.readerModeSettings();
             if (modeSettings != null) {
                 Map<String, Object> modeSettingsValues = new HashMap<>();
-                modeSettingsValues.put("notificationMode", modeSettings.isNotificationMode());
-                modeSettingsValues.put("autoScroll", modeSettings.isAutoScroll());
-                modeSettingsValues.put("scrollSpeed", modeSettings.getScrollSpeed());
-                modeSettingsValues.put("showLineNumbers", modeSettings.isShowLineNumbers());
+                modeSettingsValues.put("notificationMode", modeSettings.notificationMode());
+                modeSettingsValues.put("autoScroll", modeSettings.autoScroll());
+                modeSettingsValues.put("scrollSpeed", modeSettings.scrollSpeed());
+                modeSettingsValues.put("showLineNumbers", modeSettings.showLineNumbers());
 
                 result.put("modeSettings", modeSettingsValues);
                 LOG.debug("阅读模式设置值: " + modeSettingsValues);
@@ -293,43 +298,18 @@ public class ConfigDiagnosticTool {
      * @return 是否成功保存
      */
     public static boolean forceSaveAllConfigs() {
+        return forceSaveAllConfigs(new ApplicationManagerHost());
+    }
+
+    /**
+     * 强制保存所有配置(环境查询由调用方注入,便于 IntelliJ 容器外测试)。
+     *
+     * @param host 环境查询宿主
+     * @return 是否成功保存
+     */
+    static boolean forceSaveAllConfigs(DiagnosticsHosts.Host host) {
         try {
-            // 强制保存插件设置
-            PluginSettings pluginSettings = ApplicationManager.getApplication().getService(PluginSettings.class);
-            if (pluginSettings != null) {
-                // 先标记为已修改
-                pluginSettings.setEnabled(pluginSettings.isEnabled());
-                pluginSettings.saveSettings();
-                LOG.debug("已强制保存插件设置");
-            }
-
-            // 强制保存阅读器设置
-            ReaderSettings readerSettings = ApplicationManager.getApplication().getService(ReaderSettings.class);
-            if (readerSettings != null) {
-                // 先标记为已修改
-                readerSettings.setFontFamily(readerSettings.getFontFamily());
-                readerSettings.saveSettings();
-                LOG.debug("已强制保存阅读器设置");
-            }
-
-            // 强制保存缓存设置
-            CacheSettings cacheSettings = ApplicationManager.getApplication().getService(CacheSettings.class);
-            if (cacheSettings != null) {
-                // 先标记为已修改
-                cacheSettings.setEnableCache(cacheSettings.isEnableCache());
-                cacheSettings.saveSettings();
-                LOG.debug("已强制保存缓存设置");
-            }
-
-            // 强制保存阅读模式设置
-            ReaderModeSettings modeSettings = ApplicationManager.getApplication().getService(ReaderModeSettings.class);
-            if (modeSettings != null) {
-                // 先标记为已修改
-                modeSettings.setNotificationMode(modeSettings.isNotificationMode());
-                modeSettings.saveSettings();
-                LOG.debug("已强制保存阅读模式设置");
-            }
-
+            host.saveAllConfigs();
             return true;
         } catch (Exception e) {
             LOG.error("强制保存配置时出错: " + e.getMessage(), e);
@@ -341,13 +321,14 @@ public class ConfigDiagnosticTool {
      * 检查阅读模式
      *
      * @param result 诊断结果
+     * @param host   环境查询宿主
      */
-    private static void checkReaderMode(Map<String, Object> result) {
+    static void checkReaderMode(Map<String, Object> result, DiagnosticsHosts.Host host) {
         try {
             // 获取阅读模式设置
-            ReaderModeSettings modeSettings = ApplicationManager.getApplication().getService(ReaderModeSettings.class);
+            DiagnosticsHosts.ReaderModeSettingsHost modeSettings = host.readerModeSettings();
             if (modeSettings != null) {
-                boolean notificationMode = modeSettings.isNotificationMode();
+                boolean notificationMode = modeSettings.notificationMode();
                 result.put("readerModeNotification", notificationMode);
                 LOG.debug("[配置诊断] 当前阅读模式: " + (notificationMode ? "通知栏模式" : "阅读器模式"));
             } else {
@@ -365,12 +346,12 @@ public class ConfigDiagnosticTool {
      *
      * @param result 诊断结果
      */
-    private static void checkNotificationMode(Map<String, Object> result) {
+    static void checkNotificationMode(Map<String, Object> result, DiagnosticsHosts.Host host) {
         try {
             LOG.debug("[诊断] 开始检查通知栏模式");
 
             // 检查通知服务
-            NotificationService notificationService = ApplicationManager.getApplication().getService(NotificationService.class);
+            DiagnosticsHosts.NotificationServiceHost notificationService = host.notificationService();
             if (notificationService == null) {
                 result.put("notificationServiceAvailable", false);
                 LOG.warn("[诊断] 无法获取通知服务实例");
@@ -381,7 +362,7 @@ public class ConfigDiagnosticTool {
             LOG.debug("[诊断] 成功获取通知服务实例");
 
             // 检查通知栏设置
-            NotificationReaderSettings notificationSettings = ApplicationManager.getApplication().getService(NotificationReaderSettings.class);
+            DiagnosticsHosts.NotificationSettingsHost notificationSettings = host.notificationSettings();
             if (notificationSettings == null) {
                 result.put("notificationSettingsAvailable", false);
                 LOG.warn("[诊断] 无法获取通知栏设置实例");
@@ -393,24 +374,24 @@ public class ConfigDiagnosticTool {
 
             // 获取通知栏设置值
             Map<String, Object> notificationSettingsValues = new HashMap<>();
-            notificationSettingsValues.put("pageSize", notificationSettings.getPageSize());
-            notificationSettingsValues.put("showPageNumber", notificationSettings.isShowPageNumber());
+            notificationSettingsValues.put("pageSize", notificationSettings.pageSize());
+            notificationSettingsValues.put("showPageNumber", notificationSettings.showPageNumber());
 
             result.put("notificationSettings", notificationSettingsValues);
             LOG.debug("[诊断] 通知栏设置值: " + notificationSettingsValues);
 
             // 获取当前页码和总页数
-            int currentPage = notificationService.getCurrentPage();
-            int totalPages = notificationService.getTotalPages();
+            int currentPage = notificationService.currentPage();
+            int totalPages = notificationService.totalPages();
 
             result.put("currentPage", currentPage);
             result.put("totalPages", totalPages);
             LOG.debug("[诊断] 当前页码: " + currentPage + ", 总页数: " + totalPages);
 
             // 获取阅读模式设置
-            ReaderModeSettings modeSettings = ApplicationManager.getApplication().getService(ReaderModeSettings.class);
+            DiagnosticsHosts.ReaderModeSettingsHost modeSettings = host.readerModeSettings();
             if (modeSettings != null) {
-                boolean notificationMode = modeSettings.isNotificationMode();
+                boolean notificationMode = modeSettings.notificationMode();
                 result.put("isNotificationModeEnabled", notificationMode);
                 LOG.debug("[诊断] 通知栏模式是否启用: " + notificationMode);
             }
@@ -428,39 +409,23 @@ public class ConfigDiagnosticTool {
      * @return 是否成功应用
      */
     public static boolean applyReaderMode() {
+        return applyReaderMode(new ApplicationManagerHost());
+    }
+
+    /**
+     * 应用阅读模式(环境查询由调用方注入,便于 IntelliJ 容器外测试)。
+     *
+     * @param host 环境查询宿主
+     * @return 是否成功应用
+     */
+    static boolean applyReaderMode(DiagnosticsHosts.Host host) {
         try {
-            // 获取阅读模式设置
-            ReaderModeSettings modeSettings = ApplicationManager.getApplication().getService(ReaderModeSettings.class);
+            DiagnosticsHosts.ReaderModeSettingsHost modeSettings = host.readerModeSettings();
             if (modeSettings == null) {
                 LOG.error("[配置诊断] 无法获取阅读模式设置实例");
                 return false;
             }
-
-            // 获取阅读模式切换器
-            ReaderModeSwitcher modeSwitcher = ApplicationManager.getApplication().getService(ReaderModeSwitcher.class);
-            if (modeSwitcher == null) {
-                LOG.error("[配置诊断] 无法获取阅读模式切换器实例");
-                return false;
-            }
-
-            // 获取当前阅读模式
-            boolean notificationMode = modeSettings.isNotificationMode();
-            LOG.debug("[配置诊断] 当前阅读模式: " + (notificationMode ? "通知栏模式" : "阅读器模式"));
-
-            // 应用阅读模式
-            Project[] openProjects = ProjectManager.getInstance().getOpenProjects();
-            if (openProjects.length == 0) {
-                LOG.warn("[配置诊断] 没有打开的项目，无法应用阅读模式");
-                return false;
-            }
-
-            for (Project project : openProjects) {
-                LOG.debug("[配置诊断] 应用阅读模式到项目: " + project.getName());
-                modeSwitcher.applyInitialModeForProject(project);
-            }
-
-            LOG.debug("[配置诊断] 成功应用阅读模式");
-            return true;
+            return host.applyReaderMode(modeSettings);
         } catch (Exception e) {
             LOG.error("[配置诊断] 应用阅读模式时出错: " + e.getMessage(), e);
             return false;

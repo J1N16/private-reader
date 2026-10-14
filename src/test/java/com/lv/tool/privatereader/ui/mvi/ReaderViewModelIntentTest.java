@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 /**
@@ -36,9 +37,7 @@ import static org.mockito.Mockito.when;
  * 全部通过内存 mock 驱动,不依赖真实网络。</p>
  *
  * <p>说明:{@code AddBook} 会经 {@code fetchBookInfo} 走 {@code UniversalParser} 的真实网络
- * 抓取,难以确定性测试,故本类不覆盖;{@code NavigateChapter} 意图虽在
- * {@link IReaderIntent} 中声明,但当前 {@code ReaderViewModel.handleIntent} 未处理
- * (属未接线的意图),亦不覆盖。</p>
+ * 抓取,难以确定性测试,故本类不覆盖。</p>
  */
 @ExtendWith(MockitoExtension.class)
 class ReaderViewModelIntentTest {
@@ -191,6 +190,147 @@ class ReaderViewModelIntentTest {
         });
 
         assertEquals(2, state.getBooks().size());
+    }
+
+    // --- NavigateChapter:在已加载目录中前进/后退 ---
+
+    private ReaderViewModel setUpBookWithThreeChapters(Book book, List<NovelParser.Chapter> chapters)
+            throws InterruptedException {
+        when(bookService.getAllBooks()).thenReturn(Observable.just(book));
+        when(bookService.getLastReadBook()).thenReturn(Maybe.just(book));
+        when(chapterService.getChapterList(book)).thenReturn(Single.just(chapters));
+        for (NovelParser.Chapter c : chapters) {
+            lenient().when(chapterService.getChapterContent(book, c.url()))
+                    .thenReturn(Single.just(c.title() + "正文"));
+        }
+        when(bookService.getBookById("book-1")).thenReturn(Single.just(book));
+        lenient().when(bookService.saveReadingProgress(any(Book.class), anyString(), anyString(), anyInt()))
+                .thenReturn(Completable.complete());
+        ReaderViewModel vm = new ReaderViewModel(bookService, chapterService, null, notificationService);
+        awaitState(l -> {
+            Disposable d = vm.getState().subscribe(next -> {
+                if ("第一章正文".equals(next.getContent())) {
+                    l.set(next);
+                }
+            });
+            vm.processIntent(new IReaderIntent.LoadInitialData());
+            return d;
+        });
+        return vm;
+    }
+
+    @Test
+    void navigateChapterForwardLoadsNextChapter() throws InterruptedException {
+        Book book = book("book-1", "测试书籍", 100L);
+        book.updateReadingProgress("chapter-1", 0, 1);
+        List<NovelParser.Chapter> chapters = List.of(
+                chapter("第一章", "chapter-1"),
+                chapter("第二章", "chapter-2"),
+                chapter("第三章", "chapter-3"));
+        viewModel = setUpBookWithThreeChapters(book, chapters);
+
+        ReaderUiState state = awaitState(l -> {
+            Disposable d = viewModel.getState().subscribe(next -> {
+                if ("第二章正文".equals(next.getContent())) {
+                    l.set(next);
+                }
+            });
+            viewModel.processIntent(new IReaderIntent.NavigateChapter(1));
+            return d;
+        });
+
+        assertEquals("chapter-2", state.getSelectedChapterId());
+        assertEquals("第二章", state.getCurrentChapterTitle());
+    }
+
+    @Test
+    void navigateChapterBackwardFromSecondChapterLoadsFirst() throws InterruptedException {
+        Book book = book("book-1", "测试书籍", 100L);
+        book.updateReadingProgress("chapter-2", 0, 1);
+        List<NovelParser.Chapter> chapters = List.of(
+                chapter("第一章", "chapter-1"),
+                chapter("第二章", "chapter-2"),
+                chapter("第三章", "chapter-3"));
+        when(bookService.getAllBooks()).thenReturn(Observable.just(book));
+        when(bookService.getLastReadBook()).thenReturn(Maybe.just(book));
+        when(bookService.getBookById("book-1")).thenReturn(Single.just(book));
+        when(chapterService.getChapterList(book)).thenReturn(Single.just(chapters));
+        when(chapterService.getChapterContent(book, "chapter-2")).thenReturn(Single.just("第二章正文"));
+        when(chapterService.getChapterContent(book, "chapter-1")).thenReturn(Single.just("第一章正文"));
+        when(bookService.saveReadingProgress(any(Book.class), anyString(), anyString(), anyInt()))
+                .thenReturn(Completable.complete());
+        viewModel = new ReaderViewModel(bookService, chapterService, null, notificationService);
+        awaitState(l -> {
+            Disposable d = viewModel.getState().subscribe(next -> {
+                if ("第二章正文".equals(next.getContent())) {
+                    l.set(next);
+                }
+            });
+            viewModel.processIntent(new IReaderIntent.LoadInitialData());
+            return d;
+        });
+
+        ReaderUiState state = awaitState(l -> {
+            Disposable d = viewModel.getState().subscribe(next -> {
+                if ("第一章正文".equals(next.getContent())) {
+                    l.set(next);
+                }
+            });
+            viewModel.processIntent(new IReaderIntent.NavigateChapter(-1));
+            return d;
+        });
+
+        assertEquals("chapter-1", state.getSelectedChapterId());
+        assertEquals("第一章", state.getCurrentChapterTitle());
+    }
+
+    @Test
+    void navigateChapterBackwardAtFirstChapterIsNoOp() throws InterruptedException {
+        Book book = book("book-1", "测试书籍", 100L);
+        book.updateReadingProgress("chapter-1", 0, 1);
+        List<NovelParser.Chapter> chapters = List.of(
+                chapter("第一章", "chapter-1"),
+                chapter("第二章", "chapter-2"),
+                chapter("第三章", "chapter-3"));
+        viewModel = setUpBookWithThreeChapters(book, chapters);
+
+        viewModel.processIntent(new IReaderIntent.NavigateChapter(-1));
+
+        Thread.sleep(200);
+        assertEquals("chapter-1", viewModel.getState().blockingFirst().getSelectedChapterId());
+        assertEquals("第一章正文", viewModel.getState().blockingFirst().getContent());
+    }
+
+    @Test
+    void navigateChapterForwardAtLastChapterIsNoOp() throws InterruptedException {
+        Book book = book("book-1", "测试书籍", 100L);
+        book.updateReadingProgress("chapter-3", 0, 1);
+        List<NovelParser.Chapter> chapters = List.of(
+                chapter("第一章", "chapter-1"),
+                chapter("第二章", "chapter-2"),
+                chapter("第三章", "chapter-3"));
+        when(bookService.getAllBooks()).thenReturn(Observable.just(book));
+        when(bookService.getLastReadBook()).thenReturn(Maybe.just(book));
+        when(bookService.getBookById("book-1")).thenReturn(Single.just(book));
+        when(chapterService.getChapterList(book)).thenReturn(Single.just(chapters));
+        when(chapterService.getChapterContent(book, "chapter-3")).thenReturn(Single.just("第三章正文"));
+        when(bookService.saveReadingProgress(any(Book.class), anyString(), anyString(), anyInt()))
+                .thenReturn(Completable.complete());
+        viewModel = new ReaderViewModel(bookService, chapterService, null, notificationService);
+        awaitState(l -> {
+            Disposable d = viewModel.getState().subscribe(next -> {
+                if ("第三章正文".equals(next.getContent())) {
+                    l.set(next);
+                }
+            });
+            viewModel.processIntent(new IReaderIntent.LoadInitialData());
+            return d;
+        });
+
+        viewModel.processIntent(new IReaderIntent.NavigateChapter(1));
+
+        Thread.sleep(200);
+        assertEquals("chapter-3", viewModel.getState().blockingFirst().getSelectedChapterId());
     }
 
     private interface StateSubscription {

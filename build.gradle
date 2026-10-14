@@ -87,7 +87,9 @@ jacocoTestCoverageVerification {
                 // LINE 51.11%(4048/7920),阈值上调至 0.47(余量 4.1pp)
                 // V26 补测 ReaderViewModel 意图分发/搜索与书籍 IO 辅助类后 LINE 51.38%(4069/7920),
                 // 阈值上调至 0.48(余量 3.4pp)
-                minimum = 0.48
+                // V27 把 ConfigDiagnosticTool 的服务查询抽为 DiagnosticsHosts.Host 并补测,
+                // 同时接线 NavigateChapter 意图后 LINE 53.47%(4283/8010),阈值上调至 0.50(余量 3.5pp)
+                minimum = 0.50
             }
         }
     }

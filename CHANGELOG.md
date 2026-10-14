@@ -27,6 +27,9 @@
 - JaCoCo LINE 覆盖率 50.29%→51.11%,回归护栏阈值 0.46→0.47 | JaCoCo LINE coverage 50.29%→51.11%, regression gate raised from 0.46 to 0.47
 - 新增 `ReaderViewModelIntentTest` 4 个(SelectBook/SearchBook 意图,该类覆盖 63.5%→68.4%)、`BookIndexStoreTest` 6 个与 `BookDetailsIoTest` 6 个(索引/详情文件 IO 直测),共 474 测试全通过 | Added 4 `ReaderViewModelIntentTest` cases (SelectBook/SearchBook intents; class coverage 63.5%→68.4%), plus 6 `BookIndexStoreTest` and 6 `BookDetailsIoTest` cases (direct index/details file IO), 474 tests passing
 - JaCoCo LINE 覆盖率 51.11%→51.38%,回归护栏阈值 0.47→0.48 | JaCoCo LINE coverage 51.11%→51.38%, regression gate raised from 0.47 to 0.48
+- 可测性改造:`ConfigDiagnosticTool` 的 `ApplicationManager` 服务查询抽为可注入的 `DiagnosticsHosts.Host`(生产实现 `ApplicationManagerHost`),该类覆盖率 22.3%→74.0%;新增 `ConfigDiagnosticToolHostTest` 11 个与 `ApplicationManagerHostTest` 11 个 | Testability refactor: extracted `ConfigDiagnosticTool`'s `ApplicationManager` service lookups into injectable `DiagnosticsHosts.Host` (production impl `ApplicationManagerHost`), lifting that class's coverage 22.3%→74.0%; added 11 `ConfigDiagnosticToolHostTest` and 11 `ApplicationManagerHostTest` cases
+- 修复:接线此前声明但未处理的 `IReaderIntent.NavigateChapter` 意图(上一章/下一章),`ReaderViewModelIntentTest` 补 4 个用例 | Fixed: wired up the previously declared-but-unhandled `IReaderIntent.NavigateChapter` intent (previous/next chapter); added 4 `ReaderViewModelIntentTest` cases
+- JaCoCo LINE 覆盖率 51.38%→53.47%,回归护栏阈值 0.48→0.50(501 测试全通过) | JaCoCo LINE coverage 51.38%→53.47%, regression gate raised from 0.48 to 0.50 (501 tests passing)
 
 ## [3.1.0] - 2026-10-10
 

@@ -13,7 +13,8 @@
 ```
 docs/solutions/
 ├── README.md              ← 本文件:总索引 / 单一事实源
-├── OPTIMIZATION_V26.md    ← 最新优化轮次(V27 起顺延)
+├── OPTIMIZATION_V27.md    ← 最新优化轮次(V28 起顺延)
+├── OPTIMIZATION_V26.md
 ├── OPTIMIZATION_V25.md
 ├── OPTIMIZATION_V24.md
 ├── OPTIMIZATION_V23.md
@@ -60,6 +61,7 @@ docs/solutions/
 | **V24** | **2026-10-10** | **3.1.1** | **`StorageManager` 注入 basePath 补测路径逻辑(21.3%→44.2%)、`FileBookRepository` 阅读位置恢复/修复补测(51.8%→64.3%)、阈值 0.45→0.46** | **443** | **50.29%** |
 | **V25** | **2026-10-10** | **3.1.1** | **通知展示创建路径补测(`NotificationDisplayManager` 32.8%→100%)、`BookServiceImpl` 增删改补测(40.7%→70.9%)、阈值 0.46→0.47** | **458** | **51.11%** |
 | **V26** | **2026-10-10** | **3.1.1** | **`ReaderViewModel` 意图分发/搜索补测(63.5%→68.4%)、`BookIndexStore`/`BookDetailsIo` 直测、阈值 0.47→0.48** | **474** | **51.38%** |
+| **V27** | **2026-10-10** | **3.1.1** | **`ConfigDiagnosticTool` 服务查询抽为 `DiagnosticsHosts.Host` 并补测(22.3%→74.0%)、接线 `NavigateChapter` 死意图、阈值 0.48→0.50** | **501** | **53.47%** |
 
 ## 三、当前状态(单一事实源)
 
@@ -84,7 +86,8 @@ docs/solutions/
 - **存储路径可测性改造**:`StorageManager` 包级注入 basePath 构造器;`FileBookRepository` 阅读位置恢复/修复补测,LINE 49.34%→50.29%(突破 50%)
 - **通知/书籍服务补测**:`NotificationDisplayManager` 展示创建路径补测(→100%)、`BookServiceImpl` 增删改补测,LINE 50.29%→51.11%
 - **ViewModel/IO 补测**:`ReaderViewModel` 意图分发/搜索补测、V13 拆分出的 `BookIndexStore`/`BookDetailsIo` 直测,LINE 51.11%→51.38%
-- **工程化**:JaCoCo 覆盖率护栏(当前 **0.48**,实测 51.38%)+ GitHub Actions CI(构建/测试/打包/`verifyPlugin`)
+- **诊断工具解耦**:`ConfigDiagnosticTool` 的服务查询抽为可注入 `DiagnosticsHosts.Host`,接线 `NavigateChapter` 死意图,LINE 51.38%→53.47%
+- **工程化**:JaCoCo 覆盖率护栏(当前 **0.50**,实测 53.47%)+ GitHub Actions CI(构建/测试/打包/`verifyPlugin`)
 
 ### 3.2 遗留事项(按文档轮次汇总)
 
@@ -114,8 +117,10 @@ docs/solutions/
 | 覆盖率实测 50.29%(V24),阈值已上调至 0.46(余量 4.29pp) | V24 完成 | — |
 | `NotificationDisplayManager` 真实通知路径(V14 遗留)已于 V25 补测至 100% | V25 完成 | — |
 | 覆盖率实测 51.11%(V25),阈值已上调至 0.47(余量 4.11pp) | V25 完成 | — |
-| `IReaderIntent.NavigateChapter` 已声明但 `handleIntent` 未接线 | V26 | 中 |
+| `IReaderIntent.NavigateChapter` 已声明但 `handleIntent` 未接线 | V27 **已修复** | — |
 | 覆盖率实测 51.38%(V26),阈值已上调至 0.48(余量 3.38pp) | V26 完成 | — |
+| `ConfigDiagnosticTool` 剩余错误分支因测试环境断言 error 日志而不覆盖 | V27 | 低 |
+| 覆盖率实测 53.47%(V27),阈值已上调至 0.50(余量 3.47pp) | V27 完成 | — |
 | `verifyPlugin` 本地需联网下载 IDE 263 平台;**CI 的 verify-plugin job 有外网正常执行** | V13 遗留 | 环境 |
 
 ### 3.3 覆盖率阈值历史
@@ -132,21 +137,22 @@ docs/solutions/
 | 0.46 | V24 存储路径/书籍修复补测后(50.29%) | V24 |
 | 0.47 | V25 通知展示/书籍服务补测后(51.11%) | V25 |
 | 0.48 | V26 ViewModel 意图/书籍 IO 补测后(51.38%) | V26 |
+| 0.50 | V27 诊断工具解耦与 NavigateChapter 接线后(53.47%) | V27 |
 
 > V15 实测 LINE 达 38.34%;V16 拆分事件处理并补测后达 39.95% 并将阈值上调至 0.35;
 > V17 拆分导航流水线补测后达 41.08%;V18 删死代码后达 41.45%;V19 拆进度逻辑后达 41.89%;V20 拆内容展示后达 42.44%;
 > V21 可测性改造监控器 + 缓存仓储 CRUD 补测后达 45.88%,阈值上调至 0.40;
 > V22 存储/网络可测性改造并补测后达 46.84%,阈值上调至 0.42;
 > V23 零覆盖工具类补测后达 49.34%,阈值上调至 0.45;V24 存储路径/书籍修复补测后达 50.29%,阈值上调至 0.46;
-> V25 通知展示/书籍服务补测后达 51.11%,阈值上调至 0.47;V26 ViewModel/IO 补测后达 51.38%,阈值上调至 0.48。
+> V25 通知展示/书籍服务补测后达 51.11%,阈值上调至 0.47;V26 ViewModel/IO 补测后达 51.38%,阈值上调至 0.48;V27 诊断工具解耦后达 53.47%,阈值上调至 0.50。
 
 ## 四、指标演进
 
-| 指标 | V8 | V9 | V10 | V11 | V12 | V13 | V14 | V15 | V16 | V17 | V18 | V19 | V20 | V21 | V22 | V23 | V24 | V25 | V26 |
-|------|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|
-| LINE | 18.24% | 28.02% | 31.02% | 31.49% | 31.48% | 33.54% | **36.35%** | **38.34%** | **39.95%** | **41.08%** | **41.45%** | **41.89%** | **42.44%** | **45.88%** | **46.84%** | **49.34%** | **50.29%** | **51.11%** | **51.38%** |
-| 测试数 | 99 | 209 | 236 | 248 | 249 | 270 | **299** | **311** | **331** | **339** | **339** | **346** | **349** | **372** | **389** | **428** | **443** | **458** | **474** |
-| 总行数 | 7581 | 7581 | 7581 | 7692 | 7692 | 7672 | 7653 | 7653 | 7912 | 7939 | 7867 | 7876 | 7902 | 7907 | 7919 | 7918 | 7920 | 7920 | 7920 |
+| 指标 | V8 | V9 | V10 | V11 | V12 | V13 | V14 | V15 | V16 | V17 | V18 | V19 | V20 | V21 | V22 | V23 | V24 | V25 | V26 | V27 |
+|------|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|
+| LINE | 18.24% | 28.02% | 31.02% | 31.49% | 31.48% | 33.54% | **36.35%** | **38.34%** | **39.95%** | **41.08%** | **41.45%** | **41.89%** | **42.44%** | **45.88%** | **46.84%** | **49.34%** | **50.29%** | **51.11%** | **51.38%** | **53.47%** |
+| 测试数 | 99 | 209 | 236 | 248 | 249 | 270 | **299** | **311** | **331** | **339** | **339** | **346** | **349** | **372** | **389** | **428** | **443** | **458** | **474** | **501** |
+| 总行数 | 7581 | 7581 | 7581 | 7692 | 7692 | 7672 | 7653 | 7653 | 7912 | 7939 | 7867 | 7876 | 7902 | 7907 | 7919 | 7918 | 7920 | 7920 | 7920 | 8010 |
 
 > 注:总行数为各轮报告的统计口径,代码持续变化,精确值以 JaCoCo 报告为准。
 
@@ -166,6 +172,9 @@ docs/solutions/
 12. **静态初始化 flag 与全局容器耦合**:`DatabaseManager` 的 `databaseInitialized` 原为静态字段、dbUrl 与目录解析走 IntelliJ 容器,导致无法用不同数据库多次实例化。改为**实例级** flag + 包级注入 dbUrl 构造器 + 由 URL 推导目录后即可独立测试;迁移逻辑内联的 `ApplicationManager.getService`/`PropertiesComponent.getInstance` 也须外提为包级重载(V22)。
 13. **硬编码 user.home 的路径服务**:`StorageManager` 构造器直接 `Path.of(user.home,...)` 并调用 `PathManager`,实例方法全 0 覆盖。抽出 `StorageManager(Path basePath)` 包级构造器、默认构造器委托之,即可在 `@TempDir` 下验证全部路径/目录逻辑(V24)。
 14. **IntelliJ 通知门面的 mock 要点**:`Notifications.Bus` 是**嵌套类**,须 `mockStatic(Notifications.Bus.class)` 而非 `Notifications.class`;`NotificationGroup` 在未插桩环境为 `final`,只可 mockStatic 后由 mock 返回;`Notification.setTitle(...)` 为流式返回 `this`,mock 须用 `Mockito.RETURNS_SELF`,否则后续 `addAction` 会 NPE(V25)。
+15. **静态服务查询导致整类不可测**:诊断/初始化类内部直接 `ApplicationManager.getApplication().getService(X.class)`,使容器外几乎全部逻辑不可达(如 `ConfigDiagnosticTool` 仅 22.3%)。把这些查询抽成**极小接口宿主**(`DiagnosticsHosts.Host` + 生产 `ApplicationManagerHost`),公有入口保留原签名并默认 new 生产实现,即可在不改生产行为的前提下把逻辑覆盖率提升 50+ 个百分点(V27)。
+16. **声明但未接线的意图是死代码**:sealed `IReaderIntent.NavigateChapter` 已定义却未在 `handleIntent` 中分支,JaCoCo 报该 record 0%。补测发现「意图无法驱动状态」时应优先检查分发器是否为每条意图都接线(V27)。
+17. **`app.getService(any())` 的泛型桩不安全**:`when(app.getService(any()))` 会因 Mockito 泛型推断产生 ClassCastException,应按具体类型 `lenient().doReturn(instance).when(app).getService(Type.class)` 逐个注册(V27)。
 
 ## 六、归档流程
 
@@ -185,7 +194,8 @@ sed -i 's|](\./OPTIMIZATION|](../OPTIMIZATION|g' archive/OPTIMIZATION_V{n}.md
 
 | 文档 | 说明 |
 |------|------|
-| `OPTIMIZATION_V26.md` | 最新轮次:ReaderViewModel 意图/书籍 IO 补测 + 阈值上调 0.48(V26) |
+| `OPTIMIZATION_V27.md` | 最新轮次:诊断工具解耦与 NavigateChapter 接线 + 阈值上调 0.50(V27) |
+| `OPTIMIZATION_V26.md` | ReaderViewModel 意图/书籍 IO 补测 + 阈值上调 0.48(V26) |
 | `OPTIMIZATION_V25.md` | 通知展示/书籍服务补测 + 阈值上调 0.47(V25) |
 | `OPTIMIZATION_V24.md` | StorageManager 注入 basePath + FileBookRepository 修复补测 + 阈值上调 0.46(V24) |
 | `OPTIMIZATION_V23.md` | 零覆盖工具类与设置聚合补测 + 阈值上调 0.45(V23) |

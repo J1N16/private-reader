@@ -115,6 +115,8 @@ public class ReaderViewModel implements Disposable {
             addNewBook(addBook.url());
         } else if (intent instanceof IReaderIntent.DeleteBook deleteBook) {
             deleteBook(deleteBook.bookId());
+        } else if (intent instanceof IReaderIntent.NavigateChapter navigateChapter) {
+            navigateChapter(navigateChapter.direction());
         } else if (intent instanceof IReaderIntent.SearchBook searchBook) {
             searchBooks(searchBook.keyword());
         } else if (intent instanceof IReaderIntent.RefreshChapters) {
@@ -124,6 +126,45 @@ public class ReaderViewModel implements Disposable {
         } else if (intent instanceof IReaderIntent.HandleExternalChapterChange externalChange) {
             handleExternalChapterChange(externalChange.book(), externalChange.chapter());
         }
+    }
+
+    /**
+     * 在已加载的目录中按 {@code direction}(-1 上一章,1 下一章)切换章节。
+     * 越界或目录尚未加载时不做任何事并给出警告日志(保持既有的容错语义)。
+     */
+    private void navigateChapter(int direction) {
+        ReaderUiState state = uiState.getValue();
+        List<NovelParser.Chapter> chapters = state.getChapters();
+        String currentChapterId = state.getSelectedChapterId();
+        if (chapters == null || chapters.isEmpty() || currentChapterId == null) {
+            LOG.warn("Cannot navigate chapter, chapter list is not ready");
+            return;
+        }
+
+        int currentIndex = -1;
+        for (int i = 0; i < chapters.size(); i++) {
+            if (currentChapterId.equals(chapters.get(i).url())) {
+                currentIndex = i;
+                break;
+            }
+        }
+        if (currentIndex < 0) {
+            LOG.warn("Cannot navigate chapter, current chapter not found in list: " + currentChapterId);
+            return;
+        }
+
+        int targetIndex = currentIndex + (direction < 0 ? -1 : 1);
+        if (targetIndex < 0 || targetIndex >= chapters.size()) {
+            LOG.warn("Cannot navigate chapter, already at boundary: " + currentChapterId);
+            return;
+        }
+
+        Book currentBook = findBookInCurrentState(state.getSelectedBookId());
+        if (currentBook == null) {
+            LOG.warn("Cannot navigate chapter, book not found in current state");
+            return;
+        }
+        loadChapterContent(currentBook, chapters.get(targetIndex));
     }
 
     private void loadChapterContent(Book book, NovelParser.Chapter chapter) {
