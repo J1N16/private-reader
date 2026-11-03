@@ -29,6 +29,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -63,10 +64,10 @@ class ReaderViewModelTest {
         NovelParser.Chapter chapter2 = chapter("第二章", "chapter-2");
         when(bookService.getAllBooks()).thenReturn(Observable.fromIterable(List.of(firstBook, lastReadBook)));
         when(bookService.getLastReadBook()).thenReturn(Maybe.just(lastReadBook));
-        when(bookService.getBookById("book-2")).thenReturn(Single.just(lastReadBook));
+        lenient().when(bookService.getBookById("book-2")).thenReturn(Single.just(lastReadBook));
         when(chapterService.getChapterList(lastReadBook)).thenReturn(Single.just(List.of(chapter1, chapter2)));
         when(chapterService.getChapterContent(lastReadBook, "chapter-2")).thenReturn(Single.just("第二章正文"));
-        when(bookService.saveReadingProgress(any(Book.class), eq("chapter-2"), eq("第二章"), eq(12)))
+        lenient().when(bookService.saveReadingProgress(any(Book.class), eq("chapter-2"), eq("第二章"), eq(12)))
                 .thenReturn(Completable.complete());
         viewModel = new ReaderViewModel(bookService, chapterService, null, notificationService);
 
@@ -97,8 +98,8 @@ class ReaderViewModelTest {
         NovelParser.Chapter chapter2 = chapter("第二章", "chapter-2");
         when(chapterService.getChapterList(book)).thenReturn(Single.just(List.of(chapter1, chapter2)));
         when(chapterService.getChapterContent(book, "chapter-2")).thenReturn(Single.just("外部切章正文"));
-        when(bookService.getBookById("book-1")).thenReturn(Single.just(book));
-        when(bookService.saveReadingProgress(book, "chapter-2", "第二章", 24)).thenReturn(Completable.complete());
+        lenient().when(bookService.getBookById("book-1")).thenReturn(Single.just(book));
+        lenient().when(bookService.saveReadingProgress(book, "chapter-2", "第二章", 24)).thenReturn(Completable.complete());
         viewModel = new ReaderViewModel(bookService, chapterService, null, notificationService);
 
         ReaderUiState state = awaitState(stateLatch -> {
@@ -128,7 +129,7 @@ class ReaderViewModelTest {
         RuntimeException failure = new RuntimeException("网络错误");
         when(bookService.getAllBooks()).thenReturn(Observable.just(book));
         when(bookService.getLastReadBook()).thenReturn(Maybe.just(book));
-        when(bookService.getBookById("book-1")).thenReturn(Single.just(book));
+        lenient().when(bookService.getBookById("book-1")).thenReturn(Single.just(book));
         when(chapterService.getChapterList(book)).thenReturn(Single.just(List.of(chapter)));
         when(chapterService.getChapterContent(book, "chapter-1")).thenReturn(Single.error(failure));
         viewModel = new ReaderViewModel(bookService, chapterService, null, notificationService);
@@ -158,11 +159,11 @@ class ReaderViewModelTest {
         AtomicReference<NovelParser.Chapter> publishedChapter = new AtomicReference<>();
         when(bookService.getAllBooks()).thenReturn(Observable.just(book));
         when(bookService.getLastReadBook()).thenReturn(Maybe.just(book));
-        when(bookService.getBookById("book-1")).thenReturn(Single.just(book));
+        lenient().when(bookService.getBookById("book-1")).thenReturn(Single.just(book));
         when(chapterService.getChapterList(book)).thenReturn(Single.just(List.of(chapter1, chapter2)));
         when(chapterService.getChapterContent(book, "chapter-1")).thenReturn(Single.just("第一章正文"));
         when(chapterService.getChapterContent(book, "chapter-2")).thenReturn(Single.just("第二章正文"));
-        when(bookService.saveReadingProgress(any(Book.class), anyString(), anyString(), anyInt()))
+        lenient().when(bookService.saveReadingProgress(any(Book.class), anyString(), anyString(), anyInt()))
                 .thenReturn(Completable.complete());
         viewModel = new ReaderViewModel(bookService, chapterService, null, notificationService, (nextBook, nextChapter) -> {
             publishedBook.set(nextBook);
@@ -205,12 +206,12 @@ class ReaderViewModelTest {
         NovelParser.Chapter chapter2 = chapter("第二章", "chapter-2");
         when(bookService.getAllBooks()).thenReturn(Observable.just(book));
         when(bookService.getLastReadBook()).thenReturn(Maybe.just(book));
-        when(bookService.getBookById("book-1")).thenReturn(Single.just(book));
+        lenient().when(bookService.getBookById("book-1")).thenReturn(Single.just(book));
         when(chapterService.getChapterList(book)).thenReturn(Single.just(List.of(chapter1, chapter2)));
         when(chapterService.getChapterContent(book, "chapter-1"))
                 .thenReturn(Single.just("第一章正文"))
                 .thenReturn(Single.just("刷新后第一章正文"));
-        when(bookService.saveReadingProgress(any(Book.class), anyString(), anyString(), anyInt()))
+        lenient().when(bookService.saveReadingProgress(any(Book.class), anyString(), anyString(), anyInt()))
                 .thenReturn(Completable.complete());
         viewModel = new ReaderViewModel(bookService, chapterService, null, notificationService);
 
@@ -250,10 +251,10 @@ class ReaderViewModelTest {
         NovelParser.Chapter chapter1 = chapter("第一章", "chapter-1");
         when(bookService.getAllBooks()).thenReturn(Observable.just(book));
         when(bookService.getLastReadBook()).thenReturn(Maybe.just(book));
-        when(bookService.getBookById("book-1")).thenReturn(Single.just(book));
+        lenient().when(bookService.getBookById("book-1")).thenReturn(Single.just(book));
         when(chapterService.getChapterList(book)).thenReturn(Single.just(List.of(chapter1)));
         when(chapterService.getChapterContent(book, "chapter-1")).thenReturn(Single.just("第一章正文"));
-        when(bookService.saveReadingProgress(any(Book.class), anyString(), anyString(), anyInt()))
+        lenient().when(bookService.saveReadingProgress(any(Book.class), anyString(), anyString(), anyInt()))
                 .thenReturn(Completable.complete());
         viewModel = new ReaderViewModel(bookService, chapterService, null, notificationService);
 
@@ -278,7 +279,7 @@ class ReaderViewModelTest {
         Book book = book("book-1", "测试书籍", 100L);
         when(bookService.getAllBooks()).thenReturn(Observable.just(book));
         when(bookService.getLastReadBook()).thenReturn(Maybe.just(book));
-        when(bookService.getBookById("book-1")).thenReturn(Single.just(book));
+        lenient().when(bookService.getBookById("book-1")).thenReturn(Single.just(book));
         when(chapterService.getChapterList(book)).thenReturn(Single.just(List.of()));
         when(bookService.removeBook(book)).thenReturn(Single.error(new RuntimeException("删除失败")));
         viewModel = new ReaderViewModel(bookService, chapterService, null, notificationService);
@@ -319,10 +320,10 @@ class ReaderViewModelTest {
         when(bookService.getAllBooks()).thenAnswer(invocation -> Observable.fromIterable(new java.util.ArrayList<>(shelf)));
         when(bookService.getLastReadBook())
                 .thenAnswer(invocation -> shelf.isEmpty() ? Maybe.empty() : Maybe.just(book));
-        when(bookService.getBookById("book-1")).thenReturn(Single.just(book));
+        lenient().when(bookService.getBookById("book-1")).thenReturn(Single.just(book));
         when(chapterService.getChapterList(book)).thenReturn(Single.just(List.of(chapter)));
         when(chapterService.getChapterContent(book, "chapter-1")).thenReturn(Single.just("第一章正文"));
-        when(bookService.saveReadingProgress(any(Book.class), anyString(), anyString(), anyInt()))
+        lenient().when(bookService.saveReadingProgress(any(Book.class), anyString(), anyString(), anyInt()))
                 .thenReturn(Completable.complete());
         when(bookService.removeBook(book)).thenReturn(Single.just(true));
         viewModel = new ReaderViewModel(bookService, chapterService, null, notificationService);

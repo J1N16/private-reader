@@ -94,10 +94,10 @@ class ReaderViewModelIntentTest {
         NovelParser.Chapter c1 = chapter("第一章", "chapter-1");
         when(bookService.getAllBooks()).thenReturn(Observable.just(book));
         when(bookService.getLastReadBook()).thenReturn(Maybe.just(book));
-        when(bookService.getBookById("book-1")).thenReturn(Single.just(book));
+        lenient().when(bookService.getBookById("book-1")).thenReturn(Single.just(book));
         when(chapterService.getChapterList(book)).thenReturn(Single.just(List.of(c1)));
         when(chapterService.getChapterContent(book, "chapter-1")).thenReturn(Single.just("正文"));
-        when(bookService.saveReadingProgress(any(Book.class), anyString(), anyString(), anyInt()))
+        lenient().when(bookService.saveReadingProgress(any(Book.class), anyString(), anyString(), anyInt()))
                 .thenReturn(Completable.complete());
         viewModel = new ReaderViewModel(bookService, chapterService, null, notificationService);
 
@@ -203,7 +203,7 @@ class ReaderViewModelIntentTest {
             lenient().when(chapterService.getChapterContent(book, c.url()))
                     .thenReturn(Single.just(c.title() + "正文"));
         }
-        when(bookService.getBookById("book-1")).thenReturn(Single.just(book));
+        lenient().when(bookService.getBookById("book-1")).thenReturn(Single.just(book));
         lenient().when(bookService.saveReadingProgress(any(Book.class), anyString(), anyString(), anyInt()))
                 .thenReturn(Completable.complete());
         ReaderViewModel vm = new ReaderViewModel(bookService, chapterService, null, notificationService);
@@ -253,11 +253,11 @@ class ReaderViewModelIntentTest {
                 chapter("第三章", "chapter-3"));
         when(bookService.getAllBooks()).thenReturn(Observable.just(book));
         when(bookService.getLastReadBook()).thenReturn(Maybe.just(book));
-        when(bookService.getBookById("book-1")).thenReturn(Single.just(book));
+        lenient().when(bookService.getBookById("book-1")).thenReturn(Single.just(book));
         when(chapterService.getChapterList(book)).thenReturn(Single.just(chapters));
         when(chapterService.getChapterContent(book, "chapter-2")).thenReturn(Single.just("第二章正文"));
         when(chapterService.getChapterContent(book, "chapter-1")).thenReturn(Single.just("第一章正文"));
-        when(bookService.saveReadingProgress(any(Book.class), anyString(), anyString(), anyInt()))
+        lenient().when(bookService.saveReadingProgress(any(Book.class), anyString(), anyString(), anyInt()))
                 .thenReturn(Completable.complete());
         viewModel = new ReaderViewModel(bookService, chapterService, null, notificationService);
         awaitState(l -> {
@@ -311,10 +311,10 @@ class ReaderViewModelIntentTest {
                 chapter("第三章", "chapter-3"));
         when(bookService.getAllBooks()).thenReturn(Observable.just(book));
         when(bookService.getLastReadBook()).thenReturn(Maybe.just(book));
-        when(bookService.getBookById("book-1")).thenReturn(Single.just(book));
+        lenient().when(bookService.getBookById("book-1")).thenReturn(Single.just(book));
         when(chapterService.getChapterList(book)).thenReturn(Single.just(chapters));
         when(chapterService.getChapterContent(book, "chapter-3")).thenReturn(Single.just("第三章正文"));
-        when(bookService.saveReadingProgress(any(Book.class), anyString(), anyString(), anyInt()))
+        lenient().when(bookService.saveReadingProgress(any(Book.class), anyString(), anyString(), anyInt()))
                 .thenReturn(Completable.complete());
         viewModel = new ReaderViewModel(bookService, chapterService, null, notificationService);
         awaitState(l -> {

@@ -9,6 +9,7 @@
 
 ### 质量与维护 | Quality and Maintenance
 - 新增 `NotificationBarModeServiceTest` 3 个(删除当前书籍退出模式/删除其他书籍不退出/无 ID 书籍忽略)、`NotificationServiceImplTest` 1 个(`clearReadingState` 清空后旧分页不可翻动)与 `ReaderConfigurableTest` 2 个(字体/字号不在列表时仍能正确选中),共 684 测试全通过 | Added 3 `NotificationBarModeServiceTest` cases (removing the current book exits the mode / removing another book keeps it / books without an id are ignored), 1 `NotificationServiceImplTest` case (`clearReadingState` makes the old pages unturnable) and 2 `ReaderConfigurableTest` cases (configured font/size still selectable when absent from the lists), 684 tests passing
+- 消除 3 个环境/时序相关的不稳定用例：`NotificationServiceImplTest` 的末页跳章用例改为注入 mock parser 并轮询等待异步导航结果（不再依赖 `example.com` 真实网络与 `timeout()` 调度时序）；`ReaderViewModelTest`/`ReaderViewModelIntentTest` 中仅由后台进度保存消费的 `saveReadingProgress`/`getBookById` 桩改为 `lenient`，避免测试先结束时误报 `UnnecessaryStubbingException` | Stabilized 3 environment/timing-dependent tests: the last-page chapter-navigation case in `NotificationServiceImplTest` now injects a mock parser and polls for the asynchronous navigation result (no longer depending on real network access to `example.com` or the `timeout()` scheduler timing), while the `saveReadingProgress`/`getBookById` stubs in `ReaderViewModelTest`/`ReaderViewModelIntentTest` that are only consumed by the background progress save are now `lenient` to avoid a spurious `UnnecessaryStubbingException` when the test finishes first
 
 ## [3.1.1] - 2026-10-10
 

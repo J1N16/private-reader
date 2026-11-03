@@ -13,6 +13,7 @@ import com.lv.tool.privatereader.service.BookService;
 import com.lv.tool.privatereader.service.ChapterService;
 import com.lv.tool.privatereader.service.impl.notification.NotificationDisplayManager;
 import com.lv.tool.privatereader.settings.NotificationReaderSettings;
+import com.lv.tool.privatereader.parser.NovelParser;
 import com.lv.tool.privatereader.storage.cache.ReactiveChapterPreloader;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,6 +25,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.when;
@@ -62,6 +65,7 @@ class NotificationServiceImplTest {
     private ReactiveSchedulers schedulers;
     private ReadingProgressRepository progressRepository;
     private Project project;
+    private MessageBus messageBus;
 
     @BeforeEach
     void setUp() {
@@ -78,7 +82,7 @@ class NotificationServiceImplTest {
         // 2. 拦截 ApplicationManager:构造器需要 getMessageBus().connect(this).subscribe(...)
         appManagerMock = mockStatic(ApplicationManager.class);
         Application app = mock(Application.class);
-        MessageBus messageBus = mock(MessageBus.class);
+        messageBus = mock(MessageBus.class);
         MessageBusConnection connection = mock(MessageBusConnection.class);
         when(messageBus.connect(any(com.intellij.openapi.Disposable.class))).thenReturn(connection);
         when(app.getMessageBus()).thenReturn(messageBus);
@@ -117,6 +121,13 @@ class NotificationServiceImplTest {
                 .thenReturn(mock(com.intellij.notification.Notification.class));
 
         // 5. 构造被测服务(依赖全部注入)
+        // 章节导航成功路径会触发预加载与章节变更事件发布:给 mock 返回确定性结果,
+        // 避免默认 null 在宿主回调中触发 NPE(仅有部分用例走到,故 lenient)
+        lenient().when(preloader.preloadChaptersReactive(any(Book.class), org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn(io.reactivex.rxjava3.core.Completable.complete());
+        lenient().when(messageBus.syncPublisher(any()))
+                .thenReturn(mock(com.lv.tool.privatereader.messaging.CurrentChapterNotifier.class));
+
         progressRepository = mock(ReadingProgressRepository.class);
         service = new NotificationServiceImpl(bookService, chapterService, settings, preloader, chapterChangeManager,
                 progressRepository);
@@ -215,7 +226,12 @@ class NotificationServiceImplTest {
 
     /** 通过接口入口建立活动阅读会话(内容足够长以产生多页)。 */
     private void startReading(String content, int pageNumber) {
-        when(bookService.getBookById("book-1")).thenReturn(io.reactivex.rxjava3.core.Single.just(book("测试书籍")));
+        startReading(book("测试书籍"), content, pageNumber);
+    }
+
+    /** 以指定书籍建立活动阅读会话(便于插入 mock parser 等确定性依赖)。 */
+    private void startReading(Book readingBook, String content, int pageNumber) {
+        when(bookService.getBookById("book-1")).thenReturn(io.reactivex.rxjava3.core.Single.just(readingBook));
         service.showChapterContent(project, "book-1", "chapter-1", pageNumber, "第一章", content);
     }
 
@@ -274,18 +290,40 @@ class NotificationServiceImplTest {
     }
 
     @Test
-    void showNextPageOnLastPageNavigatesToNextChapter() {
-        startReading(longContent(), 1);
+    void showNextPageOnLastPageNavigatesToNextChapterFirstPage() throws InterruptedException {
+        // 用 mock parser 固定目标章节内容:否则会真实访问 example.com,结果随网络环境漂移
+        Book readingBook = book("测试书籍");
+        NovelParser parser = mock(NovelParser.class);
+        lenient().when(parser.getChapterContent(eq("chapter-2"), any(Book.class)))
+                .thenReturn("第二章正文。".repeat(100));
+        readingBook.setParser(parser);
+
+        startReading(readingBook, longContent(), 1);
         int total = service.getTotalPages();
         for (int i = 1; i < total; i++) {
             service.showNextPage(project);
         }
         assertEquals(total, service.getCurrentPage());
 
-        // 末页再下一页:走 chapterNavigator.navigateChapter(1) 分支
+        // 末页再下一页:走 chapterNavigator.navigateChapter(1) 分支,应切到下一章首页
         service.showNextPage(project);
 
-        assertEquals(total, service.getCurrentPage());
+        // 导航链路含 timeout()(默认 computation 调度器),因此等待状态落定而非直接断言
+        awaitUntil("应已导航到下一章", () -> "chapter-2".equals(service.getCurrentChapterId()));
+        assertEquals(1, service.getCurrentPage(), "新章节应从第 1 页开始");
+    }
+
+    /** 在有限时间内轮询等待异步状态落定。 */
+    private static void awaitUntil(String message, java.util.function.BooleanSupplier condition)
+            throws InterruptedException {
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(2);
+        while (System.nanoTime() < deadline) {
+            if (condition.getAsBoolean()) {
+                return;
+            }
+            Thread.sleep(10);
+        }
+        assertTrue(condition.getAsBoolean(), message);
     }
 
     @Test
