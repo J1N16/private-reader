@@ -1,6 +1,8 @@
 package com.lv.tool.privatereader.service.impl;
 
+import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationManager;
+import com.lv.tool.privatereader.events.BookEvents;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.repository.BookRepository;
 import com.lv.tool.privatereader.repository.ReadingProgressRepository;
@@ -78,12 +80,35 @@ public class BookServiceImpl implements BookService {
             try {
                 readingProgressRepository.resetProgress(book);
                 bookRepository.removeBook(book);
+                publishBookRemoved(book);
                 emitter.onSuccess(true);
             } catch (Exception e) {
                 LOG.warn("移除书籍失败: " + book.getTitle(), e);
                 emitter.onError(e);
             }
         }).subscribeOn(Schedulers.io());
+    }
+
+    /**
+     * 发布书籍删除事件,通知订阅者(如通知栏模式)清理与该书籍相关的状态。
+     * <p>
+     * 事件发布失败不影响删除结果,因此内部吞掉异常;单元测试环境下可能没有可用的
+     * {@link Application} 实例,此时直接跳过。
+     *
+     * @param book 被删除的书籍
+     */
+    private void publishBookRemoved(@NotNull Book book) {
+        try {
+            Application application = ApplicationManager.getApplication();
+            if (application == null) {
+                return;
+            }
+            application.getMessageBus()
+                    .syncPublisher(BookEvents.BookRemovedListener.BOOK_REMOVED_TOPIC)
+                    .bookRemoved(book);
+        } catch (Exception e) {
+            LOG.warn("发布书籍删除事件失败: " + book.getTitle(), e);
+        }
     }
 
     @Override

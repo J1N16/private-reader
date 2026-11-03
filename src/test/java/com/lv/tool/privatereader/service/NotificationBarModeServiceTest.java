@@ -7,6 +7,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
 import com.intellij.util.messages.MessageBus;
 import com.intellij.util.messages.MessageBusConnection;
+import com.lv.tool.privatereader.events.BookEvents;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.model.BookProgressData;
 import com.lv.tool.privatereader.repository.ReadingProgressRepository;
@@ -16,6 +17,7 @@ import io.reactivex.rxjava3.core.Single;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 
@@ -69,6 +71,7 @@ class NotificationBarModeServiceTest {
 
     private Project project;
     private Book sampleBook;
+    private MessageBusConnection messageBusConnection;
 
     @BeforeEach
     void setUp() {
@@ -92,8 +95,8 @@ class NotificationBarModeServiceTest {
         appManagerMock = mockStatic(ApplicationManager.class);
         Application app = mock(Application.class);
         MessageBus messageBus = mock(MessageBus.class);
-        MessageBusConnection connection = mock(MessageBusConnection.class);
-        when(messageBus.connect(any(com.intellij.openapi.Disposable.class))).thenReturn(connection);
+        messageBusConnection = mock(MessageBusConnection.class);
+        when(messageBus.connect(any(com.intellij.openapi.Disposable.class))).thenReturn(messageBusConnection);
         when(app.getMessageBus()).thenReturn(messageBus);
         Mockito.doAnswer(invocation -> {
             ((Runnable) invocation.getArgument(0)).run();
@@ -149,7 +152,48 @@ class NotificationBarModeServiceTest {
     void deactivateClosesNotificationsAndClearsState() {
         service.deactivateNotificationBarMode();
         verify(notificationService).closeAllNotifications();
+        verify(notificationService).clearReadingState();
         verify(readerModeSettings).setCurrentMode(ReaderModeSettings.Mode.DEFAULT);
+    }
+
+    // --- 书籍删除事件 ---
+
+    @Test
+    void removingCurrentBookDeactivatesNotificationMode() {
+        when(notificationService.getCurrentBookId()).thenReturn("b1");
+
+        captureBookRemovedListener().bookRemoved(sampleBook);
+
+        // 退出通知栏模式并清除阅读会话状态,避免残留分页仍可翻页
+        verify(notificationService).clearReadingState();
+        verify(readerModeSettings).setCurrentMode(ReaderModeSettings.Mode.DEFAULT);
+    }
+
+    @Test
+    void removingOtherBookKeepsNotificationMode() {
+        when(notificationService.getCurrentBookId()).thenReturn("other-book");
+
+        captureBookRemovedListener().bookRemoved(sampleBook);
+
+        verify(notificationService, never()).clearReadingState();
+        verify(readerModeSettings, never()).setCurrentMode(ReaderModeSettings.Mode.DEFAULT);
+    }
+
+    @Test
+    void removingBookWithoutIdIsIgnored() {
+        Book noIdBook = mock(Book.class);
+        when(noIdBook.getId()).thenReturn(null);
+
+        captureBookRemovedListener().bookRemoved(noIdBook);
+
+        verify(notificationService, never()).clearReadingState();
+    }
+
+    private BookEvents.BookRemovedListener captureBookRemovedListener() {
+        ArgumentCaptor<BookEvents.BookRemovedListener> captor =
+                ArgumentCaptor.forClass(BookEvents.BookRemovedListener.class);
+        verify(messageBusConnection).subscribe(eq(BookEvents.BookRemovedListener.BOOK_REMOVED_TOPIC), captor.capture());
+        return captor.getValue();
     }
 
     // --- 翻页 ---

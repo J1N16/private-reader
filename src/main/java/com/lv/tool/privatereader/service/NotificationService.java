@@ -56,6 +56,13 @@ public interface NotificationService {
     void closeAllNotifications();
 
     /**
+     * 清除当前阅读会话状态(书籍/章节/分页/页码),并关闭通知。
+     * <p>
+     * 用于退出通知栏模式或当前阅读的书籍被删除时,避免残留的分页数据仍可被翻页。
+     */
+    void clearReadingState();
+
+    /**
      * 获取当前通知显示的页码 (用于通知栏模式)
      *
      * @return 当前页码

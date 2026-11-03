@@ -316,6 +316,23 @@ class NotificationServiceImplTest {
     }
 
     @Test
+    void clearReadingStateStopsPagingAndDropsCachedPages() {
+        startReading(longContent(), 1);
+        assertEquals("book-1", service.getCurrentBookId());
+
+        service.clearReadingState();
+
+        assertNull(service.getCurrentBookId());
+        assertNull(service.getCurrentChapterId());
+        assertEquals(0, service.getTotalPages());
+        assertEquals(0, service.getCurrentPage());
+
+        // 清除后旧分页不应再可翻动
+        service.showNextPage(project);
+        assertEquals(0, service.getCurrentPage());
+    }
+
+    @Test
     void restoredPageNumberIsClampedToPageCount() {
         // 仓库报告的页码超出总页数 → 应夹紧到最后一页
         com.lv.tool.privatereader.model.BookProgressData data =

@@ -1,5 +1,6 @@
 package com.lv.tool.privatereader.service;
 
+import com.lv.tool.privatereader.events.BookEvents;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.model.BookProgressData;
 import com.lv.tool.privatereader.repository.ReadingProgressRepository;
@@ -85,6 +86,11 @@ public class NotificationBarModeService implements Disposable, NotificationReade
         ApplicationManager.getApplication().getMessageBus().connect(this)
             .subscribe(NotificationReaderSettingsListener.TOPIC, this);
         LOG.info("NotificationBarModeService subscribed to NotificationReaderSettingsListener.");
+
+        // 当前阅读的书籍被删除时退出通知栏模式,避免残留的章节分页仍可被翻页
+        ApplicationManager.getApplication().getMessageBus().connect(this)
+            .subscribe(BookEvents.BookRemovedListener.BOOK_REMOVED_TOPIC, this::handleBookRemoved);
+        LOG.info("NotificationBarModeService subscribed to BookRemovedListener.");
 
         LOG.info("NotificationBarModeService 初始化完成");
     }
@@ -216,6 +222,8 @@ public class NotificationBarModeService implements Disposable, NotificationReade
     public void deactivateNotificationBarMode() {
         // 2. Close all notifications
         notificationService.closeAllNotifications();
+        // 2.1 清除阅读会话状态,避免保留的章节分页数据仍可被翻页
+        notificationService.clearReadingState();
 
         // 3. Update ReaderModeSettings to default mode (or previous mode)
         readerModeSettings.setCurrentMode(ReaderModeSettings.Mode.DEFAULT); // Or handle previous mode
@@ -224,6 +232,29 @@ public class NotificationBarModeService implements Disposable, NotificationReade
         this.currentBookId = null;
         this.currentChapterId = null;
         this.currentPageNumber = 0;
+    }
+
+    /**
+     * 处理书籍被删除事件：若被删除的正是通知栏当前阅读的书籍,则退出通知栏模式。
+     *
+     * @param removedBook 被删除的书籍
+     */
+    private void handleBookRemoved(@NotNull Book removedBook) {
+        String removedBookId = removedBook.getId();
+        if (removedBookId == null) {
+            return;
+        }
+
+        String activeBookId = notificationService.getCurrentBookId();
+        boolean isCurrentBook = removedBookId.equals(this.currentBookId)
+            || removedBookId.equals(activeBookId);
+        if (!isCurrentBook) {
+            return;
+        }
+
+        LOG.info("当前阅读的书籍已被删除,退出通知栏模式: " + removedBook.getTitle());
+        // 事件可能在后台线程发布,通知关闭与模式切换需回到 UI 线程
+        ApplicationManager.getApplication().invokeLater(this::deactivateNotificationBarMode);
     }
 
     /**

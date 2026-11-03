@@ -456,6 +456,16 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
     }
 
     @Override
+    public void clearReadingState() {
+
+        LOG.debug("[通知栏模式] 清除阅读状态: 当前状态=" + getViewState());
+        closeCurrentNotificationInternal();
+        updateViewState(s -> ReaderViewState.empty());
+        paginationCache.clear();
+        isLoadingChapter.set(false);
+    }
+
+    @Override
     public int getCurrentPage() {
         ReaderViewState state = getViewState();
         if (state.getPages().isEmpty()) {
