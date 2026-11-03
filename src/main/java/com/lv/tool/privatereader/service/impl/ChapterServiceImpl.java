@@ -155,12 +155,7 @@ public final class ChapterServiceImpl implements ChapterService {
         String bookId = book.getId();
         LOG.info("获取章节列表: 书籍='" + book.getTitle() + "' (缓存优先策略)");
 
-        // 1. 缓存优先：立即从缓存返回数据
-        Single<List<Chapter>> cachedChaptersSingle = fallbackToCache(book)
-                .filter(chapters -> !chapters.isEmpty())
-                .toSingle();
-
-        // 2. 后台异步从网络获取最新数据
+        // 网络请求：成功后同步更新内存缓存与 Book 自身的持久化缓存
         Single<List<Chapter>> networkChaptersSingle = Single.fromCallable(() -> {
                     NovelParser parser = book.getParser();
                     if (parser == null) {
@@ -187,43 +182,58 @@ public final class ChapterServiceImpl implements ChapterService {
                         LOG.warn("后台网络获取的章节列表为空 for '" + book.getTitle() + "'.");
                     }
                 })
-                .doOnError(error -> LOG.warn("后台网络获取章节列表失败 for '" + book.getTitle() + "': " + error.getMessage()));
+                .doOnError(error -> LOG.warn("网络获取章节列表失败 for '" + book.getTitle() + "': " + error.getMessage()));
 
-        // 3. 合并缓存和网络请求
-        // a. 立即返回缓存的结果
-        // b. 触发后台网络请求，但不等待其完成（带频率限制和并发控制）
-        // c. 如果缓存为空，则等待网络请求的结果
-        return cachedChaptersSingle
-                .doOnSuccess(chapters -> {
-                    // 缓存命中时，检查是否需要后台刷新
-                    if (lastNetworkCheckCache.getIfPresent(bookId) == null) {
-                        try {
-                            // 使用 chapterListSingleCache 确保同一时间只有一个后台更新任务在运行
-                            chapterListSingleCache.get(bookId, () -> {
-                                LOG.info("触发后台章节列表更新 for '" + book.getTitle() + "'");
-                                lastNetworkCheckCache.put(bookId, System.currentTimeMillis());
-
-                                // 创建并启动任务，任务完成后自动清理并发锁
-                                Single<List<Chapter>> task = networkChaptersSingle
-                                    .doFinally(() -> chapterListSingleCache.invalidate(bookId));
-
-                                task.subscribe();
-                                return task;
-                            });
-                        } catch (Exception e) {
-                            LOG.warn("触发后台更新时发生异常: " + e.getMessage());
-                        }
-                    } else {
-                        LOG.debug("跳过后台章节列表更新 (最近已更新) for '" + book.getTitle() + "'");
+        return fallbackToCache(book)
+                .flatMap(cachedChapters -> {
+                    if (cachedChapters.isEmpty()) {
+                        // 缓存为空：等待网络结果（例如刚添加的新书，属于正常流程，不应记为错误）
+                        LOG.info("章节列表缓存为空，执行网络请求 for '" + book.getTitle() + "'");
+                        lastNetworkCheckCache.put(bookId, System.currentTimeMillis());
+                        return fetchChaptersFromNetwork(book, networkChaptersSingle);
                     }
-                })
-                .onErrorResumeNext(e -> {
-                    // 缓存未命中或出错，执行网络请求并记录时间
-                    LOG.info("缓存未命中或出错，执行网络请求 for '" + book.getTitle() + "'");
-                    lastNetworkCheckCache.put(bookId, System.currentTimeMillis());
-                    return networkChaptersSingle
-                        .doFinally(() -> chapterListSingleCache.invalidate(bookId));
+                    // 缓存命中：立即返回缓存结果，并触发后台刷新
+                    triggerBackgroundRefresh(book, networkChaptersSingle);
+                    return Single.just(cachedChapters);
                 });
+    }
+
+    /**
+     * 执行网络请求获取章节列表，失败时转换为带上下文的异常。
+     */
+    private Single<List<Chapter>> fetchChaptersFromNetwork(Book book, Single<List<Chapter>> networkChaptersSingle) {
+        return networkChaptersSingle
+            .doFinally(() -> chapterListSingleCache.invalidate(book.getId()))
+            .onErrorResumeNext(e -> Single.error(new PrivateReaderException(
+                "网络获取章节列表失败: '" + book.getTitle() + "'", e,
+                PrivateReaderException.ExceptionType.NETWORK_ERROR)));
+    }
+
+    /**
+     * 缓存命中时，在后台异步刷新章节列表（带并发控制与频率限制）。
+     */
+    private void triggerBackgroundRefresh(Book book, Single<List<Chapter>> networkChaptersSingle) {
+        String bookId = book.getId();
+        if (lastNetworkCheckCache.getIfPresent(bookId) != null) {
+            LOG.debug("跳过后台章节列表更新 (最近已更新) for '" + book.getTitle() + "'");
+            return;
+        }
+        try {
+            // 使用 chapterListSingleCache 确保同一时间只有一个后台更新任务在运行
+            chapterListSingleCache.get(bookId, () -> {
+                LOG.info("触发后台章节列表更新 for '" + book.getTitle() + "'");
+                lastNetworkCheckCache.put(bookId, System.currentTimeMillis());
+
+                // 创建并启动任务，任务完成后自动清理并发锁
+                Single<List<Chapter>> task = networkChaptersSingle
+                    .doFinally(() -> chapterListSingleCache.invalidate(bookId));
+
+                task.subscribe(chapters -> {}, e -> LOG.debug("后台章节列表更新失败: " + e.getMessage()));
+                return task;
+            });
+        } catch (Exception e) {
+            LOG.warn("触发后台更新时发生异常: " + e.getMessage());
+        }
     }
 
     /**
@@ -250,8 +260,9 @@ public final class ChapterServiceImpl implements ChapterService {
             return Single.just(bookCachedChapters);
         }
 
-        LOG.error("网络和所有缓存都获取章节列表失败 for book: '" + book.getTitle() + "'");
-        return Single.just(List.of()); // 返回空列表作为最终的失败结果
+        // 缓存为空（常见于刚添加的新书），交由调用方走网络请求，不属于错误
+        LOG.debug("章节列表缓存为空 for book: '" + book.getTitle() + "'");
+        return Single.just(List.of());
     }
 
     @Override
