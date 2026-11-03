@@ -1,5 +1,15 @@
 # Changelog 更新日志
 
+## [3.1.2] - 2026-11-03
+
+### 修复 | Fixes
+- 修复设置面板中配置的字体/字号不在系统字体列表或预设字号列表时,面板一打开就误报「已修改」并在应用时静默替换用户字体的问题:非可编辑下拉框 `setSelectedItem` 找不到目标项会保留原选中项,现改为先确保当前配置的字体与字号在下拉项中存在,再加载设置 | Fixed the settings panel falsely reporting "modified" on open and silently replacing the configured font when the configured font family or size was missing from the system font list or preset size list: a non-editable `JComboBox#setSelectedItem` keeps the previous selection when the item is absent, so the panel now inserts the configured font/size before loading settings
+- 修复首次添加书籍时误报「网络和所有缓存都获取章节列表失败」:原「缓存优先」流程在缓存必然为空的新书场景下仍调用 `LOG.error`,IDE 随即弹出错误通知并打印异常堆栈,极易被误认为添加失败(实际随后网络请求成功)。现缓存为空改记 debug 并显式进入网络分支,网络失败才包装为 `PrivateReaderException(NETWORK_ERROR)` 并保留书籍标题与原始 cause;后台刷新订阅补上错误处理 | Fixed a false "network and all caches failed to load chapter list" error right after adding a book: the cache-first flow still called `LOG.error` in the guaranteed cache-miss case of a new book, popping an IDE error notification with a stack trace that looked like an add failure (the following network request actually succeeded). A cache miss is now logged at debug and explicitly falls through to the network branch; only genuine network failures are wrapped as `PrivateReaderException(NETWORK_ERROR)` with the book title and original cause, and the background refresh subscription now handles errors
+- 修复删除当前阅读书籍后通知栏模式仍可上下翻页:通知栏阅读会话(书籍/章节/分页/页码)原本从不清理,删除书籍后 `isReadingActive()` 仍为 true,翻页继续作用于旧章节的残留分页。现新增书籍删除事件并在 `BookServiceImpl.removeBook` 成功后发布,`NotificationService` 新增 `clearReadingState()` 重置会话与分页缓存,通知栏模式在被删书籍正是当前阅读书籍时退出模式,删除其他书籍不受影响 | Fixed notification-bar mode still turning pages after the current book was deleted: the notification reading session (book/chapter/pages/page index) was never cleared, so `isReadingActive()` stayed true and paging kept walking the stale chapter pages. Added a book-removed event published after a successful `BookServiceImpl.removeBook`, a new `NotificationService.clearReadingState()` that resets the session and pagination cache, and notification-bar mode now exits when the removed book is the one being read, while removing other books is unaffected
+
+### 质量与维护 | Quality and Maintenance
+- 新增 `NotificationBarModeServiceTest` 3 个(删除当前书籍退出模式/删除其他书籍不退出/无 ID 书籍忽略)、`NotificationServiceImplTest` 1 个(`clearReadingState` 清空后旧分页不可翻动)与 `ReaderConfigurableTest` 2 个(字体/字号不在列表时仍能正确选中),共 684 测试全通过 | Added 3 `NotificationBarModeServiceTest` cases (removing the current book exits the mode / removing another book keeps it / books without an id are ignored), 1 `NotificationServiceImplTest` case (`clearReadingState` makes the old pages unturnable) and 2 `ReaderConfigurableTest` cases (configured font/size still selectable when absent from the lists), 684 tests passing
+
 ## [3.1.1] - 2026-10-10
 
 ### 重构 | Refactor

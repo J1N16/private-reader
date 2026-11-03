@@ -108,15 +108,17 @@
   ]]></description>
 
   <change-notes><![CDATA[
-    <h3>Version 3.1.1</h3>
+    <h3>Version 3.1.2</h3>
     <ul>
-      <li>Internal refactor: extracted notification-bar chapter-change handling and chapter navigation for maintainability (no behavior change)</li>
-      <li>Tests: added regression tests for both extracted components and raised the coverage gate to 35%</li>
+      <li>Fixed a false "failed to load chapter list" error notification right after adding a book</li>
+      <li>Fixed notification-bar mode still allowing page turning after the current book was deleted</li>
+      <li>Fixed the settings panel falsely reporting "modified" and silently replacing the configured font when the font family or size was not in the dropdown lists</li>
     </ul>
-    <h3>3.1.1 版本更新</h3>
+    <h3>3.1.2 版本更新</h3>
     <ul>
-      <li>内部重构:拆分通知栏章节变更处理与章节导航,提升可维护性(无行为变更)</li>
-      <li>测试:为两个拆分组件补充回归测试,覆盖率护栏上调至 35%</li>
+      <li>修复首次添加书籍时误报“获取章节列表失败”错误通知的问题</li>
+      <li>修复删除当前阅读书籍后通知栏模式仍可上下翻页的问题</li>
+      <li>修复设置的字体/字号不在下拉列表时设置面板误报“已修改”并静默替换字体的问题</li>
     </ul>
   ]]></change-notes>
 

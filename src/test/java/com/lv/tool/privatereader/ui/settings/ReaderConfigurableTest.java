@@ -122,6 +122,34 @@ class ReaderConfigurableTest {
     }
 
     @Test
+    void createComponentKeepsConfiguredFontFamilyAbsentFromSystem() {
+        // 系统未安装配置中的字体(如配置来自其他平台)时,下拉框仍应选中该字体,
+        // 否则面板一打开就会显示为「已修改」并在 apply 时静默替换用户设置
+        stubDefaultPreset();
+        lenient().when(settings.getFontFamily()).thenReturn("Private Reader Test Font");
+        ReaderConfigurable configurable = new ReaderConfigurable();
+
+        configurable.createComponent();
+
+        assertEquals("Private Reader Test Font",
+                ((javax.swing.JComboBox<?>) field(configurable, "fontFamilyComboBox")).getSelectedItem());
+        assertFalse(configurable.isModified());
+    }
+
+    @Test
+    void createComponentKeepsConfiguredFontSizeAbsentFromPresetList() {
+        stubDefaultPreset();
+        lenient().when(settings.getFontSize()).thenReturn(15);
+        ReaderConfigurable configurable = new ReaderConfigurable();
+
+        configurable.createComponent();
+
+        assertEquals(15, ((javax.swing.JComboBox<?>) field(configurable, "fontSizeComboBox"))
+                .getSelectedItem());
+        assertFalse(configurable.isModified());
+    }
+
+    @Test
     void isModifiedIsFalseWhenWidgetsMatchSettings() {
         stubDefaultPreset();
         ReaderConfigurable configurable = new ReaderConfigurable();

@@ -55,6 +55,9 @@ public class ReaderConfigurable implements Configurable {
         Integer[] sizes = {12, 14, 16, 18, 20, 22, 24, 26, 28, 30};
         fontSizeComboBox = new ComboBox<>(sizes);
         
+        // 确保当前配置的字体/字号在下拉项中存在,否则无法选中(见 ensureConfiguredFontValues)
+        ensureConfiguredFontValues();
+        
         boldCheckBox = new JCheckBox("粗体");
         
         // 主题设置
@@ -145,6 +148,31 @@ public class ReaderConfigurable implements Configurable {
         panel.add(button);
         panel.add(preview);
         return panel;
+    }
+
+    /**
+     * 确保当前设置中的字体/字号在对应下拉框中存在。
+     * <p>
+     * 系统可能未安装配置中的字体(例如配置从其他平台迁移而来),字号也可能不在预设列表内。
+     * 非可编辑的 {@code JComboBox#setSelectedItem} 找不到目标项时会保留原选中项,导致面板一打
+     * 开就与设置不一致:{@link #isModified()} 误报「已修改」,用户点「应用」后配置的字体被静默
+     * 替换。此处把缺失的字体/字号插入列表首位,保证 {@link #loadSettings()} 能正确选中。
+     */
+    private void ensureConfiguredFontValues() {
+        String configuredFont = settings.getFontFamily();
+        if (configuredFont != null && !configuredFont.isEmpty()) {
+            ensureComboContains(fontFamilyComboBox, configuredFont);
+        }
+        ensureComboContains(fontSizeComboBox, settings.getFontSize());
+    }
+
+    private static <T> void ensureComboContains(ComboBox<T> comboBox, T value) {
+        for (int i = 0; i < comboBox.getItemCount(); i++) {
+            if (value.equals(comboBox.getItemAt(i))) {
+                return;
+            }
+        }
+        comboBox.insertItemAt(value, 0);
     }
 
     private void loadSettings() {
