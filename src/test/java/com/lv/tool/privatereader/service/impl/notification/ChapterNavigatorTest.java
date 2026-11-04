@@ -8,7 +8,6 @@ import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.parser.NovelParser;
 import com.lv.tool.privatereader.parser.NovelParser.Chapter;
 import com.lv.tool.privatereader.repository.ReadingProgressRepository;
-import com.lv.tool.privatereader.service.BookService;
 import com.lv.tool.privatereader.service.ChapterService;
 import com.lv.tool.privatereader.settings.NotificationReaderSettings;
 import io.reactivex.rxjava3.core.Single;
@@ -24,6 +23,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.UnaryOperator;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -42,7 +42,7 @@ import static org.mockito.Mockito.when;
  * - 首页往前翻:导航到上一章最后一页
  * - 边界保护:第一章再往前 / 最后一章再往后,弹信息而非崩溃
  * - 空章节列表短路
- * - 非缓存数据源:异步委托 {@code BookService.getChaptersSync}
+ * - 非缓存数据源:异步委托 {@code ChapterService.getChapterList}
  * <p>
  * 隔离方式:
  * - {@link Host} 用可断言内存实现(真实 ReaderViewState + 分页),验证导航器对宿主的调用
@@ -50,7 +50,7 @@ import static org.mockito.Mockito.when;
  */
 class ChapterNavigatorTest {
 
-    private BookService bookService;
+    private ChapterService chapterService;
     private NotificationReaderSettings settings;
     private ReactiveSchedulers schedulers;
     private TestHost host;
@@ -58,12 +58,11 @@ class ChapterNavigatorTest {
 
     private Project project;
     private Book book;
-    private NovelParser parser;
     private MockedStatic<ApplicationManager> appManagerMock;
 
     @BeforeEach
     void setUp() {
-        bookService = mock(BookService.class);
+        chapterService = mock(ChapterService.class);
         settings = mock(NotificationReaderSettings.class);
         when(settings.isShowReadingProgress()).thenReturn(false);
         schedulers = mock(ReactiveSchedulers.class);
@@ -78,10 +77,9 @@ class ChapterNavigatorTest {
                 new Chapter("第一章", "c1"),
                 new Chapter("第二章", "c2"),
                 new Chapter("第三章", "c3")));
-        // stub 解析器:缓存数据源下内容从 parser 获取,避免真实网络请求
-        parser = mock(NovelParser.class);
-        when(parser.getChapterContent(anyString(), any(Book.class))).thenReturn("章节正文。".repeat(200));
-        book.setParser(parser);
+        // stub 章节内容:所有数据源统一通过 ChapterService 获取内容,避免真实网络请求
+        when(chapterService.getChapterContent(any(Book.class), anyString()))
+                .thenReturn(Single.just("章节正文。".repeat(200)));
         host = new TestHost();
 
         // ProgressSaveHelper 通过 ApplicationManager 获取阅读进度仓库
@@ -91,7 +89,7 @@ class ChapterNavigatorTest {
         appManagerMock.when(ApplicationManager::getApplication).thenReturn(app);
 
         RxJavaPlugins.setIoSchedulerHandler(s -> Schedulers.trampoline());
-        navigator = new ChapterNavigator(host, bookService, settings, schedulers);
+        navigator = new ChapterNavigator(host, chapterService, settings, schedulers);
     }
 
     @AfterEach
@@ -169,16 +167,28 @@ class ChapterNavigatorTest {
     }
 
     @Test
-    void navigateChapterFallsBackToBookServiceWhenNoCachedChapters() {
+    void navigateToLastPageAtFirstChapterNotifiesInsteadOfFailing() {
+        startReadingAt("c1");
+
+        navigator.navigateToLastPage(project, -1);
+
+        assertNull(host.errorTitle, "第一章首页向前翻不应报导航失败");
+        assertEquals("导航", host.infoTitle);
+        assertEquals("c1", host.getViewState().getChapterId(), "第一章不应再往前");
+        assertEquals(0, host.publishCount);
+    }
+
+    @Test
+    void navigateChapterFallsBackToChapterServiceWhenNoCachedChapters() {
         startReadingAt("c1");
         book.setCachedChapters(List.of()); // 清空缓存
-        when(bookService.getChaptersSync("b1")).thenReturn(List.of(
-                new ChapterService.EnhancedChapter("第一章", "c1", "内容一"),
-                new ChapterService.EnhancedChapter("第二章", "c2", "内容二")));
+        when(chapterService.getChapterList(book)).thenReturn(Single.just(List.of(
+                new Chapter("第一章", "c1"),
+                new Chapter("第二章", "c2"))));
 
         navigator.navigateChapter(project, 1);
 
-        verify(bookService).getChaptersSync("b1");
+        verify(chapterService).getChapterList(book);
         assertEquals("c2", host.getViewState().getChapterId(), "异步数据源应导航到下一章");
         assertEquals(1, host.publishCount);
     }
@@ -187,7 +197,7 @@ class ChapterNavigatorTest {
     void navigateChapterWithEmptyChapterListShowsInfo() {
         startReadingAt("c1");
         book.setCachedChapters(List.of()); // 清空缓存以走异步数据源
-        when(bookService.getChaptersSync("b1")).thenReturn(List.of());
+        when(chapterService.getChapterList(book)).thenReturn(Single.just(List.of()));
 
         navigator.navigateChapter(project, 1);
 
@@ -198,16 +208,16 @@ class ChapterNavigatorTest {
     // --- V32 补充:异步数据源下的末页导航与展示失败分支 ---
 
     @Test
-    void navigateToLastPageFallsBackToBookServiceWhenNoCachedChapters() {
+    void navigateToLastPageFallsBackToChapterServiceWhenNoCachedChapters() {
         startReadingAt("c2");
         book.setCachedChapters(List.of());
-        when(bookService.getChaptersSync("b1")).thenReturn(List.of(
-                new ChapterService.EnhancedChapter("第一章", "c1", "内容一"),
-                new ChapterService.EnhancedChapter("第二章", "c2", "内容二")));
+        when(chapterService.getChapterList(book)).thenReturn(Single.just(List.of(
+                new Chapter("第一章", "c1"),
+                new Chapter("第二章", "c2"))));
 
         navigator.navigateToLastPage(project, -1);
 
-        verify(bookService).getChaptersSync("b1");
+        verify(chapterService).getChapterList(book);
         assertEquals("c1", host.getViewState().getChapterId(), "异步数据源应回到上一章");
         assertEquals(1, host.publishCount);
     }
@@ -216,7 +226,7 @@ class ChapterNavigatorTest {
     void navigateToLastPageWithEmptyChapterListShowsInfo() {
         startReadingAt("c1");
         book.setCachedChapters(List.of());
-        when(bookService.getChaptersSync("b1")).thenReturn(List.of());
+        when(chapterService.getChapterList(book)).thenReturn(Single.just(List.of()));
 
         navigator.navigateToLastPage(project, 1);
 

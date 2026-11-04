@@ -283,7 +283,7 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
                 readingProgressRepository);
         this.chapterNavigator = new ChapterNavigator(
                 navigatorHost,
-                bookService,
+                chapterService,
                 notificationSettings,
                 reactiveSchedulers);
         this.progressManager = new NotificationProgressManager(
@@ -423,6 +423,7 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
     public Single<Notification> showInfo(@NotNull String title, @NotNull String message) {
 
         LOG.debug("NotificationServiceImpl: 显示信息: " + title + " - " + message);
+        this.isLoadingChapter.set(false); // 信息提示意味着加载流程已结束,清除加载状态避免后续翻页被短路
 
         Notification notification = NotificationDisplayManager.showInfo(title, message);
 

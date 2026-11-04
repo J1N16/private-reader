@@ -127,6 +127,9 @@ class NotificationServiceImplTest {
                 .thenReturn(io.reactivex.rxjava3.core.Completable.complete());
         lenient().when(messageBus.syncPublisher(any()))
                 .thenReturn(mock(com.lv.tool.privatereader.messaging.CurrentChapterNotifier.class));
+        // 章节导航统一通过 ChapterService 获取内容:给 mock 返回确定性正文
+        lenient().when(chapterService.getChapterContent(any(Book.class), org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(io.reactivex.rxjava3.core.Single.just(longContent()));
 
         progressRepository = mock(ReadingProgressRepository.class);
         service = new NotificationServiceImpl(bookService, chapterService, settings, preloader, chapterChangeManager,
@@ -291,12 +294,10 @@ class NotificationServiceImplTest {
 
     @Test
     void showNextPageOnLastPageNavigatesToNextChapterFirstPage() throws InterruptedException {
-        // 用 mock parser 固定目标章节内容:否则会真实访问 example.com,结果随网络环境漂移
+        // 用 ChapterService mock 固定目标章节内容:否则会真实访问 example.com,结果随网络环境漂移
         Book readingBook = book("测试书籍");
-        NovelParser parser = mock(NovelParser.class);
-        lenient().when(parser.getChapterContent(eq("chapter-2"), any(Book.class)))
-                .thenReturn("第二章正文。".repeat(100));
-        readingBook.setParser(parser);
+        lenient().when(chapterService.getChapterContent(any(Book.class), eq("chapter-2")))
+                .thenReturn(io.reactivex.rxjava3.core.Single.just("第二章正文。".repeat(100)));
 
         startReading(readingBook, longContent(), 1);
         int total = service.getTotalPages();

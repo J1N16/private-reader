@@ -6,10 +6,8 @@ import com.lv.tool.privatereader.async.ReactiveSchedulers;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.parser.NovelParser;
 import com.lv.tool.privatereader.parser.NovelParser.Chapter;
-import com.lv.tool.privatereader.service.BookService;
 import com.lv.tool.privatereader.service.ChapterService;
 import com.lv.tool.privatereader.settings.NotificationReaderSettings;
-import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -25,7 +23,7 @@ import java.util.function.UnaryOperator;
  * <ul>
  *   <li>{@link #navigateChapter} — 导航到目标章节第一页</li>
  *   <li>{@link #navigateToLastPage} — 导航到目标章节最后一页(首页再往前翻时触发)</li>
- *   <li>两种章节数据源收敛:{@code Book.cachedChapters}(内存)与 {@code BookService.getChaptersSync}(异步获取)</li>
+ *   <li>两种章节数据源收敛:{@code Book.cachedChapters}(内存)与 {@code ChapterService.getChapterList}(异步获取)</li>
  *   <li>统一展示流水线 {@code showNavigatedChapter}:更新状态 → 分页 → 显示通知 → 保存进度 → 预加载 → 发布事件</li>
  * </ul>
  * 本类不持有通知引用/分页缓存等状态,通过 {@link Host} 窄接口回调宿主服务,
@@ -71,16 +69,16 @@ public final class ChapterNavigator {
     }
 
     private final Host host;
-    private final BookService bookService;
+    private final ChapterService chapterService;
     private final NotificationReaderSettings notificationSettings;
     private final ReactiveSchedulers reactiveSchedulers;
 
     public ChapterNavigator(@NotNull Host host,
-                            @NotNull BookService bookService,
+                            @NotNull ChapterService chapterService,
                             @NotNull NotificationReaderSettings notificationSettings,
                             @NotNull ReactiveSchedulers reactiveSchedulers) {
         this.host = host;
-        this.bookService = bookService;
+        this.chapterService = chapterService;
         this.notificationSettings = notificationSettings;
         this.reactiveSchedulers = reactiveSchedulers;
     }
@@ -88,75 +86,65 @@ public final class ChapterNavigator {
     /**
      * 导航到相邻章节的第一页。
      * <p>
-     * 优先使用 {@code Book.cachedChapters};为空时异步调用 {@code BookService.getChaptersSync}。
-     * 调用方负责活动会话与加载状态门控。
+     * 优先使用 {@code Book.cachedChapters};为空时通过 {@link ChapterService#getChapterList(Book)}
+     * 异步获取(该方法自带缓存与网络回退)。调用方负责活动会话与加载状态门控。
      *
      * @param project   当前项目
      * @param direction 方向,-1 表示上一章,1 表示下一章
      */
     public void navigateChapter(@NotNull Project project, int direction) {
-        host.showLoadingNotification(project, "正在加载章节...");
-
-        Book book = host.getViewState().getBook();
-        List<Chapter> cachedChapters = book.getCachedChapters();
-        if (cachedChapters != null && !cachedChapters.isEmpty()) {
-            LOG.debug("使用Book中的cachedChapters进行导航,章节数量: " + cachedChapters.size());
-            reactiveSchedulers.runOnUI(() -> processChapterNavigationWithCachedChapters(project, cachedChapters, direction, false));
-        } else {
-            LOG.debug("Book中的cachedChapters为空,使用bookService.getChaptersSync获取章节列表");
-            Single.fromCallable(() -> bookService.getChaptersSync(book.getId()))
-                .subscribeOn(Schedulers.io())
-                .timeout(30, TimeUnit.SECONDS)
-                .doOnError(e -> reactiveSchedulers.runOnUI(() -> host.showError("导航失败", "获取章节列表时出错: " + e.getMessage())))
-                .subscribe(chapters -> reactiveSchedulers.runOnUI(() -> processChapterNavigation(project, chapters, direction, false)));
-        }
+        navigate(project, direction, false);
     }
 
     /**
      * 导航到相邻章节的最后一页(首页继续往前翻时触发)。
      * <p>
-     * 与 {@link #navigateChapter} 相同的数据源选择策略,区别在于定位到目标章节末页。
+     * 与 {@link #navigateChapter} 共用同一套章节列表与内容获取流程,仅最终定位的页码不同。
      * 调用方负责活动会话与加载状态门控。
      *
      * @param project   当前项目
      * @param direction 方向,-1 表示上一章,1 表示下一章
      */
     public void navigateToLastPage(@NotNull Project project, int direction) {
-        LOG.info("[通知栏模式] 导航到章节的最后一页,方向: " + direction);
+        navigate(project, direction, true);
+    }
 
+    /**
+     * 导航流水线入口:选择章节列表数据源并委托 {@link #processChapterNavigation} 展示。
+     *
+     * @param project    当前项目
+     * @param direction  方向,-1 表示上一章,1 表示下一章
+     * @param toLastPage 是否定位到目标章节的最后一页(否则第一页)
+     */
+    private void navigate(@NotNull Project project, int direction, boolean toLastPage) {
         ReaderViewState state = host.getViewState();
-        if (state.getBook() == null || state.getChapterId() == null) {
+        Book book = state.getBook();
+        if (book == null || state.getChapterId() == null) {
             LOG.warn("[通知栏模式] 当前没有正在阅读的内容");
             host.showInfo("导航", "当前没有正在阅读的内容");
             return;
         }
-        Book book = state.getBook();
 
-        // 显示加载状态通知
         host.showLoadingNotification(project, "正在加载章节...");
 
-        // 首先尝试使用Book中的cachedChapters
-        List<NovelParser.Chapter> cachedChapters = book.getCachedChapters();
+        List<Chapter> cachedChapters = book.getCachedChapters();
         if (cachedChapters != null && !cachedChapters.isEmpty()) {
-            LOG.debug("使用Book中的cachedChapters导航到最后一页,章节数量: " + cachedChapters.size());
-            // 在UI线程上处理导航逻辑
-            reactiveSchedulers.runOnUI(() -> processChapterNavigationWithCachedChapters(project, cachedChapters, direction, true));
+            LOG.debug("使用Book中的cachedChapters进行导航,章节数量: " + cachedChapters.size());
+            reactiveSchedulers.runOnUI(() -> processChapterNavigation(
+                project, cachedChapters, direction, toLastPage, "cachedChapters"));
             return;
         }
 
-        // 如果cachedChapters为空,则使用异步方式获取章节列表
-        LOG.debug("Book中的cachedChapters为空,使用bookService.getChaptersSync获取章节列表");
-        Single.fromCallable(() -> bookService.getChaptersSync(book.getId()))
-            .subscribeOn(Schedulers.io()) // 在IO线程上执行
-            .timeout(30, TimeUnit.SECONDS) // 设置超时
+        LOG.debug("Book中的cachedChapters为空,使用ChapterService.getChapterList获取章节列表");
+        chapterService.getChapterList(book)
+            .subscribeOn(Schedulers.io())
+            .timeout(30, TimeUnit.SECONDS)
             .doOnError(e -> {
                 LOG.error("[通知栏模式] 获取章节列表时出错: " + e.getMessage(), e);
                 reactiveSchedulers.runOnUI(() -> host.showError("导航失败", "获取章节列表时出错: " + e.getMessage()));
             })
-            .subscribe(chapters -> {
-                // 在获取到章节列表后,在UI线程上处理导航逻辑
-                reactiveSchedulers.runOnUI(() -> processChapterNavigation(project, chapters, direction, true));
-            });
+            .subscribe(chapters -> reactiveSchedulers.runOnUI(
+                () -> processChapterNavigation(project, chapters, direction, toLastPage, "chapterService")));
     }
 
     /**
@@ -187,18 +175,20 @@ public final class ChapterNavigator {
     }
 
     /**
-     * 处理章节导航逻辑(同步数据源,章节内容已包含在 {@link ChapterService.EnhancedChapter} 中)。
+     * 处理章节导航:解析目标索引 → 异步获取目标章节内容 → 统一展示。
      * 在UI线程上执行。
      *
      * @param project           当前项目
-     * @param chapters          章节列表
+     * @param chapters          章节列表(可能来自 Book 缓存或 ChapterService)
      * @param direction         导航方向
      * @param navigateToLastPage 是否导航到目标章节的最后一页(否则第一页)
+     * @param sourceLogTag      数据源标识(仅用于日志)
      */
     private void processChapterNavigation(@NotNull Project project,
-                                         @Nullable List<ChapterService.EnhancedChapter> chapters,
+                                         @Nullable List<Chapter> chapters,
                                          int direction,
-                                         boolean navigateToLastPage) {
+                                         boolean navigateToLastPage,
+                                         @NotNull String sourceLogTag) {
         if (chapters == null || chapters.isEmpty()) {
             LOG.warn("章节列表为空");
             host.showInfo("导航", "章节列表为空");
@@ -206,78 +196,42 @@ public final class ChapterNavigator {
         }
 
         // 提取章节URL列表
-        List<String> chapterUrls = chapters.stream().map(ChapterService.EnhancedChapter::url).toList();
+        List<String> chapterUrls = chapters.stream().map(Chapter::url).toList();
 
-        int targetIndex = resolveNavigationTarget(chapterUrls, direction, chapters.size(), "");
+        int targetIndex = resolveNavigationTarget(chapterUrls, direction, chapters.size(), "[通知栏模式] ");
         if (targetIndex < 0) {
             return;
         }
 
-        // Get the target chapter and its content
-        ChapterService.EnhancedChapter targetChapter = chapters.get(targetIndex);
-        NovelParser.Chapter eventChapter = new NovelParser.Chapter(targetChapter.title(), targetChapter.url());
-        showNavigatedChapter(project, eventChapter, targetChapter.getContent(), targetIndex, navigateToLastPage, "");
-    }
-
-    /**
-     * 使用Book中的cachedChapters处理章节导航逻辑(异步数据源,章节内容需从 parser 获取)。
-     * 在UI线程上执行。
-     *
-     * @param project           当前项目
-     * @param cachedChapters    缓存的章节列表
-     * @param direction         导航方向
-     * @param navigateToLastPage 是否导航到目标章节的最后一页(否则第一页)
-     */
-    private void processChapterNavigationWithCachedChapters(@NotNull Project project,
-                                                          @Nullable List<Chapter> cachedChapters,
-                                                          int direction,
-                                                          boolean navigateToLastPage) {
-        if (cachedChapters == null || cachedChapters.isEmpty()) {
-            LOG.warn("缓存的章节列表为空,无法导航");
-            host.showInfo("导航", "章节列表为空");
-            return;
-        }
-
-        // 提取章节URL列表
-        List<String> chapterUrls = cachedChapters.stream().map(Chapter::url).toList();
-
-        int targetIndex = resolveNavigationTarget(chapterUrls, direction, cachedChapters.size(), "[通知栏模式] ");
-        if (targetIndex < 0) {
-            return;
-        }
-
-        // 获取目标章节
-        Chapter targetChapter = cachedChapters.get(targetIndex);
+        Chapter targetChapter = chapters.get(targetIndex);
         String targetChapterId = targetChapter.url();
+
+        Book book = host.getViewState().getBook();
+        if (book == null) {
+            LOG.warn("[通知栏模式] 当前没有正在阅读的内容");
+            host.showInfo("导航", "当前没有正在阅读的内容");
+            return;
+        }
 
         // 显示加载状态通知
         host.showLoadingNotification(project, "正在加载章节内容...");
 
-        Book book = host.getViewState().getBook();
-        // 使用异步方式获取章节内容,避免阻塞UI线程
-        Single.fromCallable(() -> {
-            if (book.getParser() != null) {
-                return book.getParser().getChapterContent(targetChapterId, book);
-            }
-            return null;
-        })
-        .subscribeOn(Schedulers.io())
-        .timeout(30, TimeUnit.SECONDS)
-        .doOnError(e -> {
-            LOG.error("获取章节内容时出错: " + e.getMessage(), e);
-            reactiveSchedulers.runOnUI(() -> host.showError("导航失败", "获取章节内容时出错: " + e.getMessage()));
-        })
-        .subscribe(content -> {
-            reactiveSchedulers.runOnUI(() ->
-                showNavigatedChapter(project, targetChapter, content, targetIndex, navigateToLastPage, "cachedChapters"));
-        });
+        // 使用 ChapterService 获取内容(统一缓存/网络/回退策略),避免依赖可能为空的 parser
+        chapterService.getChapterContent(book, targetChapterId)
+            .subscribeOn(Schedulers.io())
+            .timeout(30, TimeUnit.SECONDS)
+            .doOnError(e -> {
+                LOG.error("获取章节内容时出错: " + e.getMessage(), e);
+                reactiveSchedulers.runOnUI(() -> host.showError("导航失败", "获取章节内容时出错: " + e.getMessage()));
+            })
+            .subscribe(content -> reactiveSchedulers.runOnUI(
+                () -> showNavigatedChapter(project, targetChapter, content, targetIndex, navigateToLastPage, sourceLogTag)));
     }
 
     /**
      * 处理章节导航后的统一展示流程。
      * <p>
-     * 由 4 组导航方法共享的"更新状态 → 分页 → 显示通知 → 保存进度 → 预加载 → 发布事件"流水线。
-     * 同步(EnhancedChapter)与异步(cachedChapters)两个数据源均收敛到此唯一入口。
+     * 缓存数据源与 ChapterService 数据源均收敛到此唯一入口。
      *
      * @param project 当前项目
      * @param targetChapter 目标章节(含 url/title,用于发布事件)

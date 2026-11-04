@@ -38,12 +38,15 @@ public final class ChapterNavigationHelper {
             return -1;
         }
 
-        // 优先使用Book的章节索引Map
+        // 优先使用Book的章节索引Map(校验索引与列表一致,防止列表被原地修改后 Map 失效)
         if (book != null) {
             int index = book.getChapterIndex(chapterId);
-            if (index >= 0) {
+            if (index >= 0 && index < chapterUrls.size() && chapterId.equals(chapterUrls.get(index))) {
                 LOG.debug("使用章节索引Map查找章节，结果: " + index);
                 return index;
+            }
+            if (index >= 0) {
+                LOG.debug("章节索引Map已失效(index=" + index + ")，回退到线性搜索");
             }
         }
 
