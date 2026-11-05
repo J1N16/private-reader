@@ -5,7 +5,7 @@ plugins {
 }
 
 group = 'com.lv.tool'
-version = '3.1.2'
+version = '3.2.0'
 
 repositories {
     mavenCentral()
@@ -121,6 +121,18 @@ intellijPlatform {
     patchPluginXml {
         sinceBuild = '261'
         changeNotes = """
+              <h3>3.2.0 版本更新</h3>
+              <ul>
+                <li>修复通知栏模式跨章翻页（首页向前翻/末页向后翻）误报“导航失败”的问题</li>
+                <li>章节导航统一使用 ChapterService 获取章节列表与内容，支持缓存、网络与过期回退</li>
+                <li>修复章节索引失效时可能定位到错误章节的问题</li>
+              </ul>
+              <h3>Version 3.2.0</h3>
+              <ul>
+                <li>Fixed a false "navigation failed" error when paging across chapters in notification-bar mode (back from the first page / forward from the last page)</li>
+                <li>Chapter navigation now uses ChapterService for chapter lists and content, with cache, network and stale-cache fallback</li>
+                <li>Fixed a stale chapter index map potentially navigating to the wrong chapter</li>
+              </ul>
               <h3>3.1.2 版本更新</h3>
               <ul>
                 <li>修复首次添加书籍时误报“获取章节列表失败”错误通知的问题</li>
