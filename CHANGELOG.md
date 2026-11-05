@@ -2,11 +2,22 @@
 
 ## [3.2.0] - 2026-11-05
 
-### 修复 | Fixes
-- 修复通知栏模式跨章翻页（首页向前翻 / 末页向后翻）误报「导航失败」:章节导航的兜底数据源调用了始终返回 `null` 的 `BookService.getChaptersSync`,而 RxJava 的 `Single.fromCallable` 不接受 `null`,会抛 NPE 并被包装为「获取章节列表时出错」。现导航统一改用 `ChapterService.getChapterList/getChapterContent`(自带缓存、网络与过期回退),并校验章节索引 Map 与当前列表是否一致(失效时回退线性查找),信息提示后同时复位加载状态,避免边界提示后翻页被永久短路 | Fixed the false "navigation failed" error when paging across chapters in notification-bar mode (back from the first page / forward from the last page): the fallback chapter source called `BookService.getChaptersSync`, which always returns `null`, and RxJava's `Single.fromCallable` rejects `null` with an NPE surfaced as "failed to load chapter list". Navigation now uses `ChapterService.getChapterList/getChapterContent` (with cache/network/stale-cache fallback), validates the chapter index map against the current list (falling back to a linear scan when stale), and resets the loading flag after info notifications so boundary notices no longer block further paging
+> 汇总自 3.1.0 以来的主要变更 | Summary of changes since 3.1.0
 
-### 质量与维护 | Quality and Maintenance
-- 新增跨章翻页兜底数据源、第一章首页向前翻不报错、章节索引 Map 失效回退等回归测试,全量测试通过 | Added regression tests for the cross-chapter fallback data source, paging back from the first chapter's first page, and stale chapter-index-map fallback; full test suite passes
+### 修复 | Fixes
+- 通知栏跨章翻页:修复首页向前翻 / 末页向后翻误报「导航失败」;章节列表与内容统一改用 `ChapterService` 获取(缓存、网络与过期回退),并校验章节索引 Map,边界提示后复位加载状态 | Cross-chapter navigation: fixed the false "navigation failed" error when paging back from the first page or forward from the last page; chapter lists and content now come from `ChapterService` (cache/network/stale-cache fallback), the chapter index map is validated, and the loading flag is cleared after boundary notices
+- 阅读进度:切换章节时重置页码并写入章节标题;进度表新增书名、章节名与可读阅读时间 | Reading progress: page number resets on chapter switch and the chapter title is persisted; the progress table records book/chapter titles and a readable read time
+- 章节目录:倒序目录自动规范为正序,修复从末章开始及上一章/下一章颠倒;修复部分站点编码乱码与目录不完整 | Catalog: reversed chapter lists are normalized to ascending order, fixing starting from the last chapter and inverted prev/next; fixed garbled encoding and incomplete catalogs on some sites
+- 缓存:修复缓存过期时间/最大缓存大小设置不生效、启动清理设置未被读取的问题 | Cache: fixed cache expiry/max-size settings having no effect and the startup cleanup setting never being read
+- 书架与添加书籍:修复书架为空时目录/内容残留、获取上次阅读书籍报错,以及首次添加书籍误报「获取章节列表失败」 | Bookshelf and adding books: fixed stale chapter list/content when the bookshelf becomes empty, errors when reading the last-read book, and a false "failed to load chapter list" after adding a book
+- 通知栏会话:修复删除当前阅读书籍后仍可翻页,删除时退出通知栏模式并清理阅读会话 | Notification session: fixed page turning continuing after the current book was deleted; the mode now exits and the session is cleared
+- 设置面板:修复字体/字号不在下拉列表时误报「已修改」并静默替换字体 | Settings panel: fixed it falsely reporting "modified" and silently replacing the configured font when the family/size was missing from the dropdowns
+
+### 重构与质量 | Refactors & Quality
+- `NotificationServiceImpl` 拆分为 `ChapterEventProcessor`、`ChapterNavigator`、`NotificationProgressManager`、`ChapterContentViewer` | Split `NotificationServiceImpl` into `ChapterEventProcessor`, `ChapterNavigator`, `NotificationProgressManager` and `ChapterContentViewer`
+- 统一章节导航流水线,移除未使用的 Reactive 兼容路径,接线 `NavigateChapter` 意图 | Unified the chapter navigation pipeline, removed the unused reactive compatibility path, and wired the `NavigateChapter` intent
+- 对 `NetworkPerformanceMonitor`、`DatabaseManager`、`StorageManager`、`FileStorageRepository`、`ExceptionHandler` 等进行可测性改造并补充大量单元测试 | Made `NetworkPerformanceMonitor`, `DatabaseManager`, `StorageManager`, `FileStorageRepository`, `ExceptionHandler` and others testable, with extensive new unit tests
+- LINE 覆盖率提升至 66%+,回归覆盖率阈值提升至 0.62 | LINE coverage raised to 66%+, regression coverage gate raised to 0.62
 
 ## [3.1.2] - 2026-11-03
 
