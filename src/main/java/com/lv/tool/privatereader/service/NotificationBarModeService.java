@@ -220,22 +220,32 @@ public class NotificationBarModeService implements Disposable, NotificationReade
      * Deactivates the notification bar reading mode.
      */
     public void deactivateNotificationBarMode() {
-        // 2. Close all notifications
+        // 关闭通知并清除阅读会话,避免保留的章节分页数据仍可被翻页
+        resetReadingSession();
+
+        // Update ReaderModeSettings to default mode (or previous mode)
+        readerModeSettings.setCurrentMode(ReaderModeSettings.Mode.DEFAULT); // Or handle previous mode
+    }
+
+    /**
+     * 清除通知栏阅读会话:关闭通知、重置阅读状态与页码,但<b>保留用户选择的阅读模式</b>。
+     * <p>
+     * 用于「当前阅读的书籍被删除」场景:旧会话必须失效(否则残留分页仍可翻页),
+     * 但不能把阅读模式切回 {@code DEFAULT} —— 阅读模式是用户的全局偏好,
+     * 一旦被重置,章节同步({@code ChapterEventProcessor})与通知栏翻页动作都会失效,
+     * 导致删除一本书后无法继续以通知栏模式阅读其他书籍。
+     */
+    void resetReadingSession() {
         notificationService.closeAllNotifications();
-        // 2.1 清除阅读会话状态,避免保留的章节分页数据仍可被翻页
         notificationService.clearReadingState();
 
-        // 3. Update ReaderModeSettings to default mode (or previous mode)
-        readerModeSettings.setCurrentMode(ReaderModeSettings.Mode.DEFAULT); // Or handle previous mode
-
-        // Clear current book/chapter/page
         this.currentBookId = null;
         this.currentChapterId = null;
         this.currentPageNumber = 0;
     }
 
     /**
-     * 处理书籍被删除事件：若被删除的正是通知栏当前阅读的书籍,则退出通知栏模式。
+     * 处理书籍被删除事件:若被删除的正是通知栏当前阅读的书籍,则清除阅读会话。
      *
      * @param removedBook 被删除的书籍
      */
@@ -252,9 +262,9 @@ public class NotificationBarModeService implements Disposable, NotificationReade
             return;
         }
 
-        LOG.info("当前阅读的书籍已被删除,退出通知栏模式: " + removedBook.getTitle());
-        // 事件可能在后台线程发布,通知关闭与模式切换需回到 UI 线程
-        ApplicationManager.getApplication().invokeLater(this::deactivateNotificationBarMode);
+        LOG.info("当前阅读的书籍已被删除,清除通知栏阅读会话(保留阅读模式): " + removedBook.getTitle());
+        // 事件可能在后台线程发布,通知关闭与状态清理需回到 UI 线程
+        ApplicationManager.getApplication().invokeLater(this::resetReadingSession);
     }
 
     /**

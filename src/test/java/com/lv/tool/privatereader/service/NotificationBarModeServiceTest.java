@@ -159,14 +159,31 @@ class NotificationBarModeServiceTest {
     // --- 书籍删除事件 ---
 
     @Test
-    void removingCurrentBookDeactivatesNotificationMode() {
+    void removingCurrentBookClearsSessionButKeepsNotificationMode() {
         when(notificationService.getCurrentBookId()).thenReturn("b1");
 
         captureBookRemovedListener().bookRemoved(sampleBook);
 
-        // 退出通知栏模式并清除阅读会话状态,避免残留分页仍可翻页
+        // 旧阅读会话必须失效,避免残留分页仍可翻页
+        verify(notificationService).closeAllNotifications();
         verify(notificationService).clearReadingState();
-        verify(readerModeSettings).setCurrentMode(ReaderModeSettings.Mode.DEFAULT);
+        assertEquals(null, service.getCurrentBookIdForTest());
+        // 阅读模式是用户全局偏好,不能因删书被重置(否则无法继续以通知栏模式阅读其他书籍)
+        verify(readerModeSettings, never()).setCurrentMode(ReaderModeSettings.Mode.DEFAULT);
+    }
+
+    @Test
+    void afterRemovingCurrentBookAnotherBookCanStillBeActivatedInNotificationMode() {
+        when(notificationService.getCurrentBookId()).thenReturn("b1");
+        captureBookRemovedListener().bookRemoved(sampleBook);
+
+        service.activateNotificationBarMode(project, "b2", "c2", 1);
+
+        // 阅读模式未被切回 DEFAULT,新书仍能正常展示到通知栏
+        verify(readerModeSettings, never()).setCurrentMode(ReaderModeSettings.Mode.DEFAULT);
+        verify(readerModeSettings).setCurrentMode(ReaderModeSettings.Mode.NOTIFICATION_BAR);
+        verify(notificationService).showChapterContent(any(Project.class), eq("b2"), eq("c2"), anyInt(),
+                anyString(), anyString());
     }
 
     @Test

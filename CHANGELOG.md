@@ -2,6 +2,10 @@
 
 ## [Unreleased] - 2026-11-10
 
+### 修复 | Fixes
+- 修复「删除当前阅读的书籍后，再看其他书籍通知栏模式失效」：删除书籍时 `NotificationBarModeService` 原本调用 `deactivateNotificationBarMode()`，除清理会话外还会把 `ReaderModeSettings` 强制切回 `DEFAULT` 并持久化，导致章节同步（`ChapterEventProcessor` 仅在 `isNotificationMode()` 为真时生效）与通知栏翻页动作全部失效。现改为只清理阅读会话（关闭通知 + `clearReadingState()` + 重置页码），**保留用户选择的阅读模式**；旧会话仍会被清空，因此「删除后还能翻旧章节」的原缺陷不会回退 | Fixed "notification bar mode stops working for other books after deleting the book being read": deleting a book used to call `deactivateNotificationBarMode()`, which not only cleared the session but also forced `ReaderModeSettings` back to `DEFAULT` (persisted), disabling chapter mirroring (`ChapterEventProcessor` only acts when `isNotificationMode()`) and the notification paging actions. Book deletion now only clears the reading session (close notifications + `clearReadingState()` + reset page number) and **keeps the user's chosen reading mode**; the stale session is still dropped, so the earlier "paging through the deleted book's pages" bug does not regress
+- 新增回归用例：删除当前书籍后阅读模式不被重置，且另一本书仍能正常激活并展示到通知栏 | Added regression tests: the reading mode is not reset after deleting the current book, and another book can still be activated and displayed in the notification bar
+
 ### 构建与依赖 | Build & Dependencies
 - 升级运行时依赖：jsoup 1.23.2 → 1.24.1、sqlite-jdbc 3.53.4.0 → 3.54.1.0、gson 2.14.0 → 2.15.0、guava 33.7.1-jre → 33.8.0-jre（rxjava 3.1.12 已是最新）| Upgraded runtime dependencies: jsoup 1.23.2 → 1.24.1, sqlite-jdbc 3.53.4.0 → 3.54.1.0, gson 2.14.0 → 2.15.0, guava 33.7.1-jre → 33.8.0-jre (rxjava 3.1.12 was already latest)
 - 升级测试依赖：mockito-bom 5.23.0 → 5.24.0（junit-bom 6.1.3、junit 4.13.2 已是最新）| Upgraded test dependencies: mockito-bom 5.23.0 → 5.24.0 (junit-bom 6.1.3 and junit 4.13.2 were already latest)
@@ -10,7 +14,7 @@
 - 兼容性说明：jsoup 1.24.1 的 Web 查询模式为**可选项**（`jsoup.queryMode=web`），默认仍为旧查询模式，解析行为不变；`Response.bodyStream()` 默认 2 MB 上限与 `:root` 语义修正均未被本项目使用 | Compatibility notes: jsoup 1.24.1 web query mode is **opt-in** (`jsoup.queryMode=web`), legacy selectors remain the default so parsing behavior is unchanged; the new 2 MB `Response.bodyStream()` cap and the corrected `:root` semantics are not used by this project
 
 ### 验证 | Verification
-- 全量回归：686 个测试全部通过，LINE 覆盖率 66.03%（阈值 0.62）；`buildPlugin` 与 `verifyPlugin` 均通过 | Full regression: all 686 tests pass, LINE coverage 66.03% (gate 0.62); `buildPlugin` and `verifyPlugin` both pass
+- 全量回归：687 个测试全部通过，LINE 覆盖率 66.04%（阈值 0.62）；`buildPlugin` 与 `verifyPlugin` 均通过 | Full regression: all 687 tests pass, LINE coverage 66.04% (gate 0.62); `buildPlugin` and `verifyPlugin` both pass
 - `verifyPlugin` 结果显示插件在 IU-261.27258.136 / IU-262.11879.100 / IU-263.7307.200（2026.1 / 2026.2 / 2026.3）上均 Compatible | `verifyPlugin` reports the plugin as Compatible on IU-261.27258.136 / IU-262.11879.100 / IU-263.7307.200 (2026.1 / 2026.2 / 2026.3)
 
 ## [3.2.0] - 2026-11-05
