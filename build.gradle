@@ -19,20 +19,21 @@ repositories {
 }
 
 dependencies {
-    implementation 'org.jsoup:jsoup:1.23.2'
-    implementation 'org.xerial:sqlite-jdbc:3.53.4.0'
+    implementation 'org.jsoup:jsoup:1.24.1'
+    implementation 'org.xerial:sqlite-jdbc:3.54.1.0'
     implementation 'io.reactivex.rxjava3:rxjava:3.1.12'
-    implementation 'com.google.code.gson:gson:2.14.0'
-    implementation 'com.google.guava:guava:33.7.1-jre'
+    implementation 'com.google.code.gson:gson:2.15.0'
+    implementation 'com.google.guava:guava:33.8.0-jre'
 
     // IntelliJ Platform
     intellijPlatform {
-        intellijIdea "2026.1.4"
+        // 编译基线保持在 2026.1 系列(与 sinceBuild=261 一致),仅跟随补丁版本
+        intellijIdea "2026.1.5.1"
     }
 
     // Test dependencies
     testImplementation platform('org.junit:junit-bom:6.1.3')
-    testImplementation platform('org.mockito:mockito-bom:5.23.0')
+    testImplementation platform('org.mockito:mockito-bom:5.24.0')
     testImplementation 'org.junit.jupiter:junit-jupiter-api'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
@@ -172,10 +173,10 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 wrapper {
-    gradleVersion = '9.7.1'
+    gradleVersion = '9.9.0'
     distributionType = Wrapper.DistributionType.BIN
-    distributionSha256Sum = 'acd53f1edaf02f1a8ff99879f8a34b302661a057d9b063ae9e35b552f804d20a'
-    distributionUrl = 'https://mirrors.cloud.tencent.com/gradle/gradle-9.7.1-bin.zip'
+    distributionSha256Sum = '0b00b0ffe07c4d4789c12d4935a44a7057d55774b7540bd4a3f76f336deb177a'
+    distributionUrl = 'https://mirrors.cloud.tencent.com/gradle/gradle-9.9.0-bin.zip'
 }
 
 // Add duplicate handling strategy for Jar tasks

@@ -1,5 +1,18 @@
 # Changelog 更新日志
 
+## [Unreleased] - 2026-11-10
+
+### 构建与依赖 | Build & Dependencies
+- 升级运行时依赖：jsoup 1.23.2 → 1.24.1、sqlite-jdbc 3.53.4.0 → 3.54.1.0、gson 2.14.0 → 2.15.0、guava 33.7.1-jre → 33.8.0-jre（rxjava 3.1.12 已是最新）| Upgraded runtime dependencies: jsoup 1.23.2 → 1.24.1, sqlite-jdbc 3.53.4.0 → 3.54.1.0, gson 2.14.0 → 2.15.0, guava 33.7.1-jre → 33.8.0-jre (rxjava 3.1.12 was already latest)
+- 升级测试依赖：mockito-bom 5.23.0 → 5.24.0（junit-bom 6.1.3、junit 4.13.2 已是最新）| Upgraded test dependencies: mockito-bom 5.23.0 → 5.24.0 (junit-bom 6.1.3 and junit 4.13.2 were already latest)
+- 升级构建工具链：Gradle 9.7.1 → 9.9.0（同步 wrapper jar/脚本与 SHA-256 校验）、IntelliJ Platform Gradle Plugin 2.19.0 → 2.20.1 | Upgraded build toolchain: Gradle 9.7.1 → 9.9.0 (wrapper jar/scripts and SHA-256 together), IntelliJ Platform Gradle Plugin 2.19.0 → 2.20.1
+- 编译基线 IntelliJ IDEA 2026.1.4 → 2026.1.5.1，保持在 2026.1 系列以匹配 `sinceBuild = 261`，不改变插件支持的 IDE 范围 | Compile baseline IntelliJ IDEA 2026.1.4 → 2026.1.5.1, staying on the 2026.1 line to match `sinceBuild = 261` so the supported IDE range is unchanged
+- 兼容性说明：jsoup 1.24.1 的 Web 查询模式为**可选项**（`jsoup.queryMode=web`），默认仍为旧查询模式，解析行为不变；`Response.bodyStream()` 默认 2 MB 上限与 `:root` 语义修正均未被本项目使用 | Compatibility notes: jsoup 1.24.1 web query mode is **opt-in** (`jsoup.queryMode=web`), legacy selectors remain the default so parsing behavior is unchanged; the new 2 MB `Response.bodyStream()` cap and the corrected `:root` semantics are not used by this project
+
+### 验证 | Verification
+- 全量回归：686 个测试全部通过，LINE 覆盖率 66.03%（阈值 0.62）；`buildPlugin` 与 `verifyPlugin` 均通过 | Full regression: all 686 tests pass, LINE coverage 66.03% (gate 0.62); `buildPlugin` and `verifyPlugin` both pass
+- `verifyPlugin` 结果显示插件在 IU-261.27258.136 / IU-262.11879.100 / IU-263.7307.200（2026.1 / 2026.2 / 2026.3）上均 Compatible | `verifyPlugin` reports the plugin as Compatible on IU-261.27258.136 / IU-262.11879.100 / IU-263.7307.200 (2026.1 / 2026.2 / 2026.3)
+
 ## [3.2.0] - 2026-11-05
 
 > 汇总自 3.1.0 以来的主要变更 | Summary of changes since 3.1.0
