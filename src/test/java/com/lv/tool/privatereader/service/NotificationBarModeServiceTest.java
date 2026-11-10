@@ -187,6 +187,30 @@ class NotificationBarModeServiceTest {
     }
 
     @Test
+    void afterRemovingCurrentBookPageActionResumesAnotherBookInNotificationMode() {
+        // 删除前:通知栏正在阅读 b1
+        when(notificationService.getCurrentBookId()).thenReturn("b1");
+        when(notificationService.getCurrentChapterId()).thenReturn("c1");
+
+        captureBookRemovedListener().bookRemoved(sampleBook);
+
+        // 删除后:会话已清空,剩下的最近阅读记录是另一本书 b2
+        when(notificationService.getCurrentBookId()).thenReturn(null);
+        when(notificationService.getCurrentChapterId()).thenReturn(null);
+        BookProgressData otherBook = new BookProgressData(
+                "b2", "书B", "c2", "第二章", 0, 3, false, "2026-11-10 10:00:00.000");
+        when(readingProgressRepository.getLastReadProgressData()).thenReturn(Optional.of(otherBook));
+
+        service.handleNextPageAction(project);
+
+        // 阅读模式未被关闭,翻页动作依然生效,且恢复的是剩下的书而不是继续翻已删书籍的残留分页
+        verify(readingProgressRepository).getLastReadProgressData();
+        verify(notificationService).showChapterContent(any(Project.class), eq("b2"), eq("c2"), anyInt(),
+                anyString(), anyString());
+        verify(notificationService, never()).showNextPage(any(Project.class));
+    }
+
+    @Test
     void removingOtherBookKeepsNotificationMode() {
         when(notificationService.getCurrentBookId()).thenReturn("other-book");
 
