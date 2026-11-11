@@ -9,9 +9,13 @@ import com.intellij.openapi.project.ProjectManager;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.util.messages.MessageBusConnection;
+import com.lv.tool.privatereader.model.Book;
+import com.lv.tool.privatereader.parser.NovelParser;
 import com.lv.tool.privatereader.settings.NotificationReaderSettings;
 import com.lv.tool.privatereader.settings.ReaderModeSettings;
 import com.lv.tool.privatereader.settings.ReaderModeSettingsListener;
+import com.lv.tool.privatereader.ui.ReaderPanel;
+import com.lv.tool.privatereader.ui.ReaderToolWindowFactory;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -84,7 +88,7 @@ public final class ReaderModeSwitcher implements ReaderModeSettingsListener, Dis
             // Apply initial mode state after successful initialization
             LOG.info("[配置诊断] 在 ReaderModeSwitcher 初始化后应用阅读模式，当前模式: " +
                     (readerModeSettings.isNotificationMode() ? "通知栏模式" : "阅读器模式"));
-            applyCurrentMode(readerModeSettings.isNotificationMode());
+            applyCurrentMode(readerModeSettings.isNotificationMode(), false);
 
         } catch (Throwable t) {
             LOG.error("Error during ReaderModeSwitcher initialization", t);
@@ -101,11 +105,11 @@ public final class ReaderModeSwitcher implements ReaderModeSettingsListener, Dis
              return;
         }
         LOG.info("Reader mode changed. Applying mode: " + (notificationMode ? "Notification" : "Panel"));
-        applyCurrentMode(notificationMode);
+        applyCurrentMode(notificationMode, true);
     }
 
     // Restore applyCurrentMode method (assuming it existed or was part of the commented block)
-    private void applyCurrentMode(boolean notificationMode) {
+    private void applyCurrentMode(boolean notificationMode, boolean activateCurrentReading) {
          if (!initialized) {
              LOG.warn("ReaderModeSwitcher trying to apply mode but is not initialized. Skipping.");
              return;
@@ -116,12 +120,20 @@ public final class ReaderModeSwitcher implements ReaderModeSettingsListener, Dis
             return;
         }
         for (Project project : openProjects) {
-             applyModeForProject(project, notificationMode);
+             applyModeForProject(project, notificationMode, activateCurrentReading);
         }
     }
 
     // Restore applyModeForProject method (assuming it existed or was part of the commented block)
-    private void applyModeForProject(Project project, boolean notificationMode) {
+    /**
+     * 应用阅读模式。
+     *
+     * @param project               项目
+     * @param notificationMode      是否切换到通知栏模式
+     * @param activateCurrentReading 是否立即在通知栏展示当前/最近阅读内容。
+     *                               仅在用户主动切换模式时为 true;启动时静默应用,避免弹出通知。
+     */
+    private void applyModeForProject(Project project, boolean notificationMode, boolean activateCurrentReading) {
          LOG.info("Applying mode [" + (notificationMode ? "Notification" : "Panel") + "] for project: " + project.getName());
          ToolWindowManager toolWindowManager = ToolWindowManager.getInstance(project);
          ToolWindow toolWindow = toolWindowManager.getToolWindow(TOOL_WINDOW_ID);
@@ -161,6 +173,12 @@ public final class ReaderModeSwitcher implements ReaderModeSettingsListener, Dis
              } else {
                  LOG.error("NotificationService is null, cannot show notification mode info.");
              }
+
+             // 用户主动切换到通知栏模式时,立即展示当前章节(或最近阅读记录),
+             // 否则通知栏会保持空白,直到面板再次产生章节变更事件。
+             if (activateCurrentReading) {
+                 activateCurrentReadingForProject(project);
+             }
          } else {
              // Switch back to Panel mode
              if (notificationService != null) {
@@ -186,6 +204,38 @@ public final class ReaderModeSwitcher implements ReaderModeSettingsListener, Dis
     }
 
     /**
+     * 在通知栏中展示项目当前正在阅读的章节;
+     * 若面板尚未选中任何章节,则回退到最近一次阅读记录。
+     * <p>
+     * 面板处于通知栏模式时通常不可见,但它的 ViewModel 仍持有当前书籍/章节。
+     * 直接复用面板的当前选择,比仅依赖进度仓库更准确。
+     */
+    private void activateCurrentReadingForProject(@NotNull Project project) {
+        try {
+            NotificationBarModeService notificationBarModeService =
+                    ApplicationManager.getApplication().getService(NotificationBarModeService.class);
+            if (notificationBarModeService == null) {
+                return;
+            }
+            notificationBarModeService.setProject(project);
+
+            ReaderPanel panel = ReaderToolWindowFactory.findPanel(project);
+            Book book = panel != null ? panel.getSelectedBook() : null;
+            NovelParser.Chapter chapter = panel != null ? panel.getSelectedChapter() : null;
+            if (book != null && chapter != null) {
+                LOG.info("切换到通知栏模式,立即展示当前章节: " + book.getTitle() + " - " + chapter.title());
+                notificationBarModeService.activateNotificationBarMode(
+                        project, book.getId(), chapter.url(), book.getLastReadPageOrDefault(1));
+            } else {
+                LOG.info("切换到通知栏模式,面板无当前章节,尝试恢复最近阅读记录");
+                notificationBarModeService.activateLastReadChapter(project);
+            }
+        } catch (Exception e) {
+            LOG.warn("切换到通知栏模式时展示当前内容失败", e);
+        }
+    }
+
+    /**
      * Applies the currently configured reader mode to the specified project.
      * Intended to be called by ProjectActivity after project initialization.
      */
@@ -204,7 +254,7 @@ public final class ReaderModeSwitcher implements ReaderModeSettingsListener, Dis
                  ", 项目: " + project.getName());
 
         // Directly call the existing method that applies the mode for a project
-        applyModeForProject(project, isNotificationMode);
+        applyModeForProject(project, isNotificationMode, false);
 
         // 如果是通知栏模式，检查 NotificationBarModeService 是否正确初始化
         if (isNotificationMode) {

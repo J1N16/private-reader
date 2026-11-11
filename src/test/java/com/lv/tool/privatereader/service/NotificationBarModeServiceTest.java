@@ -149,6 +149,29 @@ class NotificationBarModeServiceTest {
     }
 
     @Test
+    void activateLastReadChapterShowsLastReadBookContent() {
+        BookProgressData lastRead = new BookProgressData(
+                "b2", "书B", "c2", "第二章", 0, 3, false, "2026-11-10 10:00:00.000");
+        when(readingProgressRepository.getLastReadProgressData()).thenReturn(Optional.of(lastRead));
+
+        service.activateLastReadChapter(project);
+
+        verify(readerModeSettings).setCurrentMode(ReaderModeSettings.Mode.NOTIFICATION_BAR);
+        verify(notificationService).showChapterContent(any(Project.class), eq("b2"), eq("c2"), anyInt(),
+                anyString(), anyString());
+    }
+
+    @Test
+    void activateLastReadChapterDoesNothingWhenNoProgress() {
+        when(readingProgressRepository.getLastReadProgressData()).thenReturn(Optional.empty());
+
+        service.activateLastReadChapter(project);
+
+        verify(notificationService, never()).showChapterContent(any(Project.class), anyString(), anyString(),
+                anyInt(), anyString(), anyString());
+    }
+
+    @Test
     void deactivateClosesNotificationsAndClearsState() {
         service.deactivateNotificationBarMode();
         verify(notificationService).closeAllNotifications();

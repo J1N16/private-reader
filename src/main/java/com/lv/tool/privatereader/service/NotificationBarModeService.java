@@ -200,6 +200,25 @@ public class NotificationBarModeService implements Disposable, NotificationReade
         });
     }
 
+    /**
+     * 在通知栏中显示最近一次阅读记录。
+     * <p>
+     * 用于切换到通知栏模式时恢复阅读内容:面板当前没有选中章节(如刚启动或刚添加书籍)
+     * 时,从进度仓库取出最近阅读的书籍/章节并在通知栏展示。
+     *
+     * @param project 当前项目
+     */
+    public void activateLastReadChapter(@NotNull Project project) {
+        setProject(project);
+        Optional<BookProgressData> lastReadBookOpt = readingProgressRepository.getLastReadProgressData();
+        if (lastReadBookOpt.isEmpty()) {
+            LOG.info("没有上次阅读记录,无法在通知栏显示内容");
+            return;
+        }
+        BookProgressData lastReadBook = lastReadBookOpt.get();
+        activateNotificationBarMode(project, lastReadBook.bookId(), lastReadBook.lastReadChapterId(), lastReadBook.lastReadPage());
+    }
+
     private Project resolveProject() {
         if (project != null && !project.isDisposed()) {
             return project;

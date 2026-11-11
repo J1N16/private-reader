@@ -8,8 +8,12 @@ import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.util.messages.MessageBus;
 import com.intellij.util.messages.MessageBusConnection;
+import com.lv.tool.privatereader.model.Book;
+import com.lv.tool.privatereader.parser.NovelParser;
 import com.lv.tool.privatereader.settings.NotificationReaderSettings;
 import com.lv.tool.privatereader.settings.ReaderModeSettings;
+import com.lv.tool.privatereader.ui.ReaderPanel;
+import com.lv.tool.privatereader.ui.ReaderToolWindowFactory;
 import io.reactivex.rxjava3.core.Single;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,6 +22,7 @@ import org.mockito.MockedStatic;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.mock;
@@ -46,6 +51,7 @@ class ReaderModeSwitcherTest {
     private MessageBusConnection connection;
     private ProjectManager projectManager;
     private Application application;
+    private NotificationBarModeService notificationBarModeService;
 
     @BeforeEach
     void setUp() {
@@ -58,7 +64,8 @@ class ReaderModeSwitcherTest {
         MessageBus messageBus = mock(MessageBus.class);
         when(application.getMessageBus()).thenReturn(messageBus);
         when(messageBus.connect(any(com.intellij.openapi.Disposable.class))).thenReturn(connection);
-        when(application.getService(NotificationBarModeService.class)).thenReturn(mock(NotificationBarModeService.class));
+        notificationBarModeService = mock(NotificationBarModeService.class);
+        when(application.getService(NotificationBarModeService.class)).thenReturn(notificationBarModeService);
         // V32:让 invokeLater 同步执行,以便覆盖隐藏/显示工具窗口的 lambda 体
         org.mockito.Mockito.doAnswer(inv -> {
             ((Runnable) inv.getArgument(0)).run();
@@ -352,5 +359,77 @@ class ReaderModeSwitcherTest {
 
         verify(connection).subscribe(eq(ReaderModeSettings.TOPIC), any());
         switcher.dispose();
+    }
+
+    // --- 切换到通知栏模式时立即展示当前/最近阅读内容 ---
+
+    @Test
+    void modeChangedToNotificationModeActivatesCurrentChapterFromPanel() {
+        when(readerModeSettings.isNotificationMode()).thenReturn(false);
+        when(notificationService.showInfo(any(), any()))
+                .thenReturn(Single.just(mock(com.intellij.notification.Notification.class)));
+
+        Project project = mock(Project.class);
+        when(project.isDisposed()).thenReturn(false);
+        when(project.getName()).thenReturn("proj");
+        when(projectManager.getOpenProjects()).thenReturn(new Project[]{project});
+
+        ToolWindowManager twm = mock(ToolWindowManager.class);
+        ToolWindow toolWindow = mock(ToolWindow.class);
+        when(twm.getToolWindow("PrivateReader")).thenReturn(toolWindow);
+        try (MockedStatic<ToolWindowManager> twmStatic = mockStatic(ToolWindowManager.class)) {
+            twmStatic.when(() -> ToolWindowManager.getInstance(project)).thenReturn(twm);
+
+            ReaderModeSwitcher switcher = newSwitcher();
+
+            Book book = new Book("b1", "书", "作者", "https://x.com/b1");
+            NovelParser.Chapter chapter = new NovelParser.Chapter("第一章", "c1");
+            ReaderPanel panel = mock(ReaderPanel.class);
+            when(panel.getSelectedBook()).thenReturn(book);
+            when(panel.getSelectedChapter()).thenReturn(chapter);
+            ReaderToolWindowFactory.PROJECT_PANELS.put(project, panel);
+            try {
+                switcher.modeChanged(true);
+
+                verify(notificationBarModeService).activateNotificationBarMode(project, "b1", "c1", 1);
+                verify(notificationBarModeService, never()).activateLastReadChapter(project);
+            } finally {
+                ReaderToolWindowFactory.PROJECT_PANELS.remove(project);
+            }
+            switcher.dispose();
+        }
+    }
+
+    @Test
+    void modeChangedToNotificationModeFallsBackToLastReadWhenPanelHasNoChapter() {
+        when(readerModeSettings.isNotificationMode()).thenReturn(false);
+        when(notificationService.showInfo(any(), any()))
+                .thenReturn(Single.just(mock(com.intellij.notification.Notification.class)));
+
+        Project project = mock(Project.class);
+        when(project.isDisposed()).thenReturn(false);
+        when(project.getName()).thenReturn("proj");
+        when(projectManager.getOpenProjects()).thenReturn(new Project[]{project});
+
+        ToolWindowManager twm = mock(ToolWindowManager.class);
+        ToolWindow toolWindow = mock(ToolWindow.class);
+        when(twm.getToolWindow("PrivateReader")).thenReturn(toolWindow);
+        try (MockedStatic<ToolWindowManager> twmStatic = mockStatic(ToolWindowManager.class)) {
+            twmStatic.when(() -> ToolWindowManager.getInstance(project)).thenReturn(twm);
+
+            ReaderModeSwitcher switcher = newSwitcher();
+
+            ReaderToolWindowFactory.PROJECT_PANELS.put(project, mock(ReaderPanel.class));
+            try {
+                switcher.modeChanged(true);
+
+                verify(notificationBarModeService).activateLastReadChapter(project);
+                verify(notificationBarModeService, never()).activateNotificationBarMode(
+                        any(Project.class), any(), any(), anyInt());
+            } finally {
+                ReaderToolWindowFactory.PROJECT_PANELS.remove(project);
+            }
+            switcher.dispose();
+        }
     }
 }

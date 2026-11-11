@@ -18,6 +18,7 @@ import com.lv.tool.privatereader.settings.CacheSettings;
 import com.lv.tool.privatereader.settings.CacheSettingsListener;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.ui.Messages;
+import com.lv.tool.privatereader.events.BookEvents;
 import com.lv.tool.privatereader.events.ChapterChangeManager;
 import com.lv.tool.privatereader.events.ChapterChangeEventSource;
 import com.lv.tool.privatereader.service.NotificationService;
@@ -130,6 +131,16 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
                     }
                 }
             }
+        });
+
+        // 通过 Tools 菜单添加书籍时(AddBookDialog 发布 BOOK_DATA_TOPIC)刷新书架:
+        // 通知栏模式下工具窗口通常是隐藏的,若不重新加载,新书不会产生章节变更事件,
+        // 通知栏也就无法恢复显示。删除书籍后重新添加书籍正是此场景。
+        messageBusConnection.subscribe(BookEvents.BookDataListener.BOOK_DATA_TOPIC, () -> {
+            LOG.info("收到书籍数据加载完成事件,重新加载书架");
+            // 标记为阅读器面板发起,确保章节加载后能同步到通知栏
+            chapterChangeManager.setEventSource(ChapterChangeEventSource.READER_PANEL);
+            loadBooks();
         });
 
         // 初始化UI组件
