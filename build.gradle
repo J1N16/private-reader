@@ -5,7 +5,7 @@ plugins {
 }
 
 group = 'com.lv.tool'
-version = '3.2.0'
+version = '3.2.1'
 
 repositories {
     mavenCentral()
@@ -122,6 +122,18 @@ intellijPlatform {
     patchPluginXml {
         sinceBuild = '261'
         changeNotes = """
+              <h3>3.2.1 版本更新</h3>
+              <h4>修复</h4>
+              <ul>
+                <li>通知栏：修复删除当前阅读的书籍后再添加书籍，通知栏不再显示内容的问题（恢复 BOOK_DATA_TOPIC 订阅，新书会被加载并同步到通知栏）</li>
+                <li>通知栏：修复主动切换到通知栏模式后通知栏空白的问题，切换时立即展示面板当前章节，无选中章节时回退到最近阅读记录；启动时仍静默应用，不弹阅读通知</li>
+              </ul>
+              <h3>Version 3.2.1</h3>
+              <h4>Fixes</h4>
+              <ul>
+                <li>Notification bar: fixed it staying empty after deleting the current book and adding a book again (the BOOK_DATA_TOPIC subscriber is restored so the new book is loaded and mirrored to the notification bar)</li>
+                <li>Notification bar: fixed it staying empty after switching to notification mode; the current panel chapter is shown immediately on an explicit switch, falling back to the most recent reading record when nothing is selected, while startup remains silent</li>
+              </ul>
               <h3>3.2.0 版本更新（汇总自 3.1.0）</h3>
               <h4>修复</h4>
               <ul>

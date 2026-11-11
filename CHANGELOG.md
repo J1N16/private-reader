@@ -1,6 +1,6 @@
 # Changelog 更新日志
 
-## [Unreleased] - 2026-11-10
+## [3.2.1] - 2026-11-11
 
 ### 修复 | Fixes
 - 修复「删除当前阅读的书籍后，再看其他书籍通知栏模式失效」：删除书籍时 `NotificationBarModeService` 原本调用 `deactivateNotificationBarMode()`，除清理会话外还会把 `ReaderModeSettings` 强制切回 `DEFAULT` 并持久化，导致章节同步（`ChapterEventProcessor` 仅在 `isNotificationMode()` 为真时生效）与通知栏翻页动作全部失效。现改为只清理阅读会话（关闭通知 + `clearReadingState()` + 重置页码），**保留用户选择的阅读模式**；旧会话仍会被清空，因此「删除后还能翻旧章节」的原缺陷不会回退 | Fixed "notification bar mode stops working for other books after deleting the book being read": deleting a book used to call `deactivateNotificationBarMode()`, which not only cleared the session but also forced `ReaderModeSettings` back to `DEFAULT` (persisted), disabling chapter mirroring (`ChapterEventProcessor` only acts when `isNotificationMode()`) and the notification paging actions. Book deletion now only clears the reading session (close notifications + `clearReadingState()` + reset page number) and **keeps the user's chosen reading mode**; the stale session is still dropped, so the earlier "paging through the deleted book's pages" bug does not regress
@@ -16,8 +16,8 @@
 - 兼容性说明：jsoup 1.24.1 的 Web 查询模式为**可选项**（`jsoup.queryMode=web`），默认仍为旧查询模式，解析行为不变；`Response.bodyStream()` 默认 2 MB 上限与 `:root` 语义修正均未被本项目使用 | Compatibility notes: jsoup 1.24.1 web query mode is **opt-in** (`jsoup.queryMode=web`), legacy selectors remain the default so parsing behavior is unchanged; the new 2 MB `Response.bodyStream()` cap and the corrected `:root` semantics are not used by this project
 
 ### 验证 | Verification
-- 全量回归：692 个测试全部通过，LINE 覆盖率 66.1%（阈值 0.62）；`buildPlugin` 与 `verifyPlugin` 均通过 | Full regression: all 692 tests pass, LINE coverage 66.1% (gate 0.62); `buildPlugin` and `verifyPlugin` both pass
-- `verifyPlugin` 结果显示插件在 IU-261.27258.136 / IU-262.11879.100 / IU-263.7307.200（2026.1 / 2026.2 / 2026.3）上均 Compatible | `verifyPlugin` reports the plugin as Compatible on IU-261.27258.136 / IU-262.11879.100 / IU-263.7307.200 (2026.1 / 2026.2 / 2026.3)
+- 全量回归：692 个测试全部通过，LINE 覆盖率 66.1%（阈值 0.62）；`buildPlugin` 生成 `private-reader-3.2.1.zip` | Full regression: all 692 tests pass, LINE coverage 66.1% (gate 0.62); `buildPlugin` produces `private-reader-3.2.1.zip`
+- 兼容性沿用 3.2.0 基线（`sinceBuild = 261`，未改依赖与兼容范围）；3.2.0 的 `verifyPlugin` 结果显示插件在 IU-261.27258.136 / IU-262.11879.100 / IU-263.7307.200（2026.1 / 2026.2 / 2026.3）上均 Compatible | Compatibility baseline unchanged from 3.2.0 (`sinceBuild = 261`, dependencies and compatibility range untouched); the 3.2.0 `verifyPlugin` report shows Compatibility on IU-261.27258.136 / IU-262.11879.100 / IU-263.7307.200 (2026.1 / 2026.2 / 2026.3)
 
 ## [3.2.0] - 2026-11-05
 
